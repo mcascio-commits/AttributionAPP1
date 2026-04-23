@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block title %}Attributions{% endblock %} — {{ annee }}</title>
+<link rel="stylesheet" href="{{ url_for('static',filename='css/style.css') }}">
+{% if not current_user.can_edit %}
+<style>
+/* Mode consultation — masquer tous les boutons d'édition */
+.add-pill, .btn-icon, .x,
+button[onclick*="addProf"], button[onclick*="editCours"],
+button[onclick*="addCours"], button[onclick*="addTitulaire"],
+button[onclick*="setGroupes"], button[onclick*="manageClasses"],
+button[onclick*="manageCoord"], button[onclick*="addNtpp"],
+button[onclick*="editNtpp"], button[onclick*="deleteNtpp"],
+button[onclick*="deleteAttr"], button[onclick*="deleteTitu"],
+button[onclick*="importPersonnel"], button[onclick*="addPersonnel"],
+input[type="number"].input-sm, input[type="checkbox"].pcheck,
+#btn-delete, #check-all,
+.drag-handle { display: none !important; }
+/* Désactiver les inputs de texte en consultation */
+.tbl input[type="text"], .tbl input[type="email"],
+.tbl input[type="number"]:not(.input-sm) { pointer-events: none; background: transparent; border-color: transparent; }
+/* Pastilles non cliquables */
+.pill { cursor: default !important; }
+.pill:hover { border-color: var(--border) !important; }
+</style>
+{% endif %}
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <div class="sb-header">
+      <div class="sb-title">Attributions</div>
+      <div style="font-size:10px;color:var(--text3);margin-top:2px">
+        <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:{% if current_user.is_admin %}var(--green){% else %}var(--gray){% endif %};margin-right:4px"></span>
+        {{ current_user.username }}
+        <span style="opacity:.6">— {% if current_user.is_admin %}admin{% else %}consultation{% endif %}</span>
+      </div>
+      <div class="sb-year" style="margin-top:6px">
+        {% if current_user.can_edit %}
+        <select onchange="changerAnnee(this.value)">
+          {% for a in annees %}
+          <option value="{{ a.label }}" {% if a.label==annee %}selected{% endif %}>{{ a.label }}</option>
+          {% endfor %}
+        </select>
+        {% else %}
+        <div style="font-size:11px;font-weight:600;color:var(--text)">{{ annee }}</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="nav-section">
+      {% set degres = [('1er degré','#6EA8D5'),('2e degré GT/TT','#378ADD'),('3e degré GT/TT','#185FA5'),('TQ','#639922'),('Coordination','#BA7517')] %}
+      {% for degre, couleur in degres %}
+        {% set fil_degre = filieres|selectattr('degre','eq',degre)|list %}
+        {% if fil_degre %}
+          <div class="nav-label">{{ degre }}</div>
+          {% for f in fil_degre %}
+          <a href="/filiere/{{ f.id }}?annee={{ annee }}"
+             class="nav-item {% if request.path=='/filiere/'~f.id %}active{% endif %}"
+             style="--dot:{{ f.couleur }}">
+            <span class="nav-dot"></span>{{ f.nom }}
+          </a>
+          {% endfor %}
+        {% endif %}
+      {% endfor %}
+
+      <div class="nav-div"></div>
+      <a href="/matieres?annee={{ annee }}" class="nav-item {% if request.path=='/matieres' %}active{% endif %}" style="--dot:#7F77DD"><span class="nav-dot"></span>Vue matières</a>
+      <a href="/recap?annee={{ annee }}"   class="nav-item {% if request.path=='/recap' %}active{% endif %}"   style="--dot:#E24B4A"><span class="nav-dot"></span>⚠ Non attribués</a>
+      <a href="/ntpp?annee={{ annee }}"    class="nav-item {% if request.path=='/ntpp' %}active{% endif %}"    style="--dot:#888780"><span class="nav-dot"></span>NTPP</a>
+      <a href="/synthese?annee={{ annee }}" class="nav-item {% if request.path=='/synthese' %}active{% endif %}" style="--dot:#888780"><span class="nav-dot"></span>Synthèse</a>
+      <a href="/personnel"                 class="nav-item {% if request.path=='/personnel' %}active{% endif %}" style="--dot:#888780"><span class="nav-dot"></span>Personnel</a>
+
+      {% if current_user.can_edit %}
+      <a href="/mails"   class="nav-item {% if request.path=='/mails' %}active{% endif %}"   style="--dot:#888780"><span class="nav-dot"></span>Envoi mails</a>
+      <div class="nav-div"></div>
+      <a href="/gestion" class="nav-item {% if request.path=='/gestion' %}active{% endif %}" style="--dot:#639922"><span class="nav-dot"></span>Gérer filières</a>
+      <a href="/export/excel?annee={{ annee }}" class="nav-item" style="--dot:#639922"><span class="nav-dot"></span>Exporter Excel</a>
+      {% endif %}
+
+      {% if current_user.is_admin %}
+      <div class="nav-div"></div>
+      <a href="/utilisateurs" class="nav-item {% if request.path=='/utilisateurs' %}active{% endif %}" style="--dot:#BA7517"><span class="nav-dot"></span>Utilisateurs</a>
+      {% endif %}
+    </div>
+
+    <div class="sb-bottom">
+      {% if current_user.can_edit %}
+      <button class="nav-item" style="--dot:#BA7517" onclick="manageAnnees(_annees,'{{ annee }}')">
+        <span class="nav-dot"></span>Années scolaires
+      </button>
+      <button class="nav-item" style="--dot:#27500A" onclick="backupDB()">
+        <span class="nav-dot"></span>Sauvegarder
+      </button>
+      {% endif %}
+      <a href="/logout" class="nav-item" style="--dot:#E24B4A">
+        <span class="nav-dot"></span>Se déconnecter
+      </a>
+    </div>
+  </nav>
+
+  <div class="main">
+    {% if not current_user.can_edit %}
+    <div style="background:var(--amber-pale);border-bottom:1px solid #FAC775;padding:5px 18px;font-size:11px;color:var(--amber-dark);display:flex;align-items:center;gap:8px">
+      <span>👁</span>
+      <span><strong>Mode consultation</strong> — lecture seule. Contactez un administrateur pour toute modification.</span>
+    </div>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+<div id="modal-overlay" class="modal-overlay" onclick="closeModal()"></div>
+<div id="modal" class="modal"></div>
+<script>
+var _annees = {{ annees|tojson|safe }};
+</script>
+<script src="{{ url_for('static',filename='js/app.js') }}"></script>
+<script src="{{ url_for('static',filename='js/drag.js') }}"></script>
+{% if not current_user.can_edit %}
+<script>
+// Désactiver drag & drop en consultation
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('[draggable]').forEach(el => el.removeAttribute('draggable'));
+  document.querySelectorAll('.pill').forEach(p => { p.draggable = false; p.style.cursor='default'; });
+});
+</script>
+{% endif %}
+{% block scripts %}{% endblock %}
+</body>
+</html>

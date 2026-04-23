@@ -1,0 +1,152 @@
+{% extends 'base.html' %}
+{% block title %}Personnel{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div class="topbar-title">Personnel — {{ people|length }} membres</div>
+  <button class="btn btn-danger" id="btn-delete" style="display:none" onclick="deleteSelected()">
+    Supprimer (<span id="sel-nb">0</span>)
+  </button>
+  <button class="btn btn-success" onclick="importPersonnel()">📥 Importer Excel/CSV</button>
+  <input type="file" id="import-f" accept=".xlsx,.xls,.csv" style="display:none" onchange="doImportPersonnel(this)">
+  <button class="btn btn-primary" onclick="addPersonnelModal()">+ Ajouter</button>
+</div>
+<div class="content">
+<div class="section">
+  <div class="section-head">
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;color:var(--text2)">
+      <input type="checkbox" id="check-all" onchange="toggleAll(this.checked)"> Tout sélectionner
+    </label>
+    <span style="font-size:10px;color:var(--text3);margin-left:8px">· cocher pour sélectionner · cliquer dans un champ pour modifier</span>
+  </div>
+  <div style="overflow-x:auto">
+  <table class="tbl">
+    <thead>
+      <tr>
+        <th style="width:32px"></th>
+        <th style="width:80px">Acronyme</th>
+        <th>Prénom</th><th>Nom</th>
+        <th>Email</th><th>Statut</th>
+        <th class="c" style="width:58px">Min h</th>
+        <th class="c" style="width:58px">Max h</th>
+        <th class="c" style="width:44px">Actif</th><th style="width:80px">Nomination</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for p in people %}
+    <tr id="row-{{ p.id }}" style="transition:background .1s">
+      <td>
+        <input type="checkbox" class="pcheck" data-id="{{ p.id }}" onchange="updateSelection()">
+      </td>
+      <td><strong>{{ p.acronyme }}</strong></td>
+      <td><input value="{{ p.prenom or '' }}" placeholder="—" style="width:120px"
+                 onblur="savePersonnel({{ p.id }},'prenom',this.value)"></td>
+      <td><input value="{{ p.nom or '' }}" placeholder="—" style="width:140px"
+                 onblur="savePersonnel({{ p.id }},'nom',this.value)"></td>
+      <td><input value="{{ p.email or '' }}" placeholder="—" style="width:200px"
+                 onblur="savePersonnel({{ p.id }},'email',this.value)"></td>
+      <td><input value="{{ p.statut or '' }}" placeholder="—" style="width:110px"
+                 onblur="savePersonnel({{ p.id }},'statut',this.value)"></td>
+      <td class="c"><input type="number" step="0.5" value="{{ p.heures_min or '' }}" placeholder="0"
+                 style="width:50px;text-align:center"
+                 onblur="savePersonnel({{ p.id }},'heures_min',parseFloat(this.value)||0)"></td>
+      <td class="c"><input type="number" step="0.5" value="{{ p.heures_max or '' }}" placeholder="0"
+                 style="width:50px;text-align:center"
+                 onblur="savePersonnel({{ p.id }},'heures_max',parseFloat(this.value)||0)"></td>
+      <td class="c"><input type="checkbox" {% if p.actif %}checked{% endif %}
+                 onchange="savePersonnel({{ p.id }},'actif',this.checked?1:0)"></td>
+      <td><button class="btn btn-sm" onclick="manageNominations({{ p.id }},'{{ p.acronyme }}')">📋</button></td>
+    </tr>
+    {% endfor %}
+    {% if not people %}
+    <tr class="empty-row"><td colspan="9">Aucun membre du personnel</td></tr>
+    {% endif %}
+    </tbody>
+  </table>
+  </div>
+</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function savePersonnel(id, field, value) {
+  const body = {}; body[field] = value;
+  api(`/api/personnel/${id}`,'PUT',body).then(r => { if(r.ok) toast('Sauvegardé'); });
+}
+
+function toggleAll(checked) {
+  document.querySelectorAll('.pcheck').forEach(cb => {
+    cb.checked = checked;
+    document.getElementById(`row-${cb.dataset.id}`).style.background =
+      checked ? 'var(--red-pale)' : '';
+  });
+  updateSelection();
+}
+
+function updateSelection() {
+  const checks = [...document.querySelectorAll('.pcheck')];
+  checks.forEach(cb => {
+    document.getElementById(`row-${cb.dataset.id}`).style.background =
+      cb.checked ? 'var(--red-pale)' : '';
+  });
+  const n = checks.filter(c => c.checked).length;
+  document.getElementById('sel-nb').textContent = n;
+  document.getElementById('btn-delete').style.display = n > 0 ? 'inline-flex' : 'none';
+  const all = document.getElementById('check-all');
+  all.indeterminate = n > 0 && n < checks.length;
+  all.checked = n === checks.length && checks.length > 0;
+}
+
+function deleteSelected() {
+  const ids = [...document.querySelectorAll('.pcheck:checked')].map(c => parseInt(c.dataset.id));
+  if (!ids.length) return;
+  if (!confirm(`Supprimer ${ids.length} personne(s) ?\n\nToutes leurs attributions et titulariats seront aussi supprimés.`)) return;
+  api('/api/personnel/delete','POST',{ids}).then(r => {
+    if (!r.ok) return toast(r.error||'Erreur','err');
+    toast(`${r.deleted} personne(s) supprimée(s)`);
+    ids.forEach(id => {
+      const row = document.getElementById(`row-${id}`);
+      if (row) row.remove();
+    });
+    document.getElementById('btn-delete').style.display = 'none';
+    document.getElementById('check-all').checked = false;
+    const remaining = document.querySelectorAll('.pcheck').length;
+    document.querySelector('.topbar-title').textContent = `Personnel — ${remaining} membres`;
+  });
+}
+
+function addPersonnelModal() {
+  openModal(`
+    <div class="modal-title">Ajouter un membre du personnel</div>
+    <div class="form-group"><label class="form-label">Acronyme *</label>
+      <input id="np-acro" placeholder="ex: DUPMA" style="width:120px;text-transform:uppercase"></div>
+    <div class="form-group"><label class="form-label">Prénom</label>
+      <input id="np-prenom" placeholder="Marie" style="width:200px"></div>
+    <div class="form-group"><label class="form-label">Nom</label>
+      <input id="np-nom" placeholder="Dupont" style="width:200px"></div>
+    <div class="form-group"><label class="form-label">Email</label>
+      <input id="np-email" type="email" placeholder="m.dupont@ecole.be" style="width:260px"></div>
+    <div class="form-group"><label class="form-label">Statut</label>
+      <input id="np-statut" placeholder="ex: temps plein" style="width:200px"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-primary" onclick="doAddPersonnel()">Ajouter</button>
+    </div>`);
+  setTimeout(()=>document.getElementById('np-acro').focus(),80);
+}
+
+function doAddPersonnel() {
+  const acro = document.getElementById('np-acro').value.trim().toUpperCase();
+  if(!acro) return toast('Acronyme requis','err');
+  api('/api/personnel','POST',{
+    acronyme:acro,
+    prenom: document.getElementById('np-prenom').value.trim(),
+    nom: document.getElementById('np-nom').value.trim(),
+    email: document.getElementById('np-email').value.trim(),
+    statut: document.getElementById('np-statut').value.trim(),
+  }).then(r=>{
+    if(!r.ok) return toast(r.error||'Erreur','err');
+    closeModal(); toast('Ajouté'); setTimeout(()=>location.reload(),400);
+  });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Connexion — Attributions</title>
+<link rel="stylesheet" href="{{ url_for('static',filename='css/style.css') }}">
+<style>
+body{display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--blue-dark)}
+.login-card{background:var(--surface);border-radius:var(--radius-lg);padding:36px 40px;width:360px;box-shadow:0 8px 32px rgba(0,0,0,.25)}
+.login-logo{font-size:22px;font-weight:700;color:var(--blue-dark);margin-bottom:4px}
+.login-sub{font-size:12px;color:var(--text3);margin-bottom:28px}
+.login-field{margin-bottom:14px}
+.login-field label{display:block;font-size:11px;color:var(--text2);margin-bottom:4px;font-weight:500}
+.login-field input{width:100%;padding:8px 10px;font-size:13px;border:1px solid var(--border2);border-radius:var(--radius);background:var(--surface)}
+.login-field input:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px #378ADD20}
+.login-btn{width:100%;padding:9px;background:var(--blue);color:#fff;border:none;border-radius:var(--radius);font-size:13px;font-weight:600;cursor:pointer;margin-top:8px}
+.login-btn:hover{background:#2E75B6}
+.login-error{background:var(--red-pale);color:var(--red-dark);border:1px solid #F0A0A0;border-radius:var(--radius);padding:8px 12px;font-size:12px;margin-bottom:14px}
+.login-role{display:flex;gap:6px;align-items:center;margin-top:18px;padding-top:14px;border-top:1px solid var(--border);font-size:11px;color:var(--text3)}
+.role-badge{padding:2px 9px;border-radius:20px;font-size:10px;font-weight:600}
+.role-admin{background:var(--blue-pale);color:var(--blue-dark)}
+.role-consult{background:var(--gray-pale);color:var(--text2)}
+</style>
+</head>
+<body>
+<div class="login-card">
+  <div class="login-logo">Attributions ISND</div>
+  <div class="login-sub">Gestion des attributions de cours</div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+  {% for cat, msg in messages %}
+  <div class="login-error">{{ msg }}</div>
+  {% endfor %}
+  {% endwith %}
+
+  <form method="POST">
+    <div class="login-field">
+      <label>Identifiant</label>
+      <input type="text" name="username" autocomplete="username" autofocus required>
+    </div>
+    <div class="login-field">
+      <label>Mot de passe</label>
+      <input type="password" name="password" autocomplete="current-password" required>
+    </div>
+    <button type="submit" class="login-btn">Se connecter</button>
+  </form>
+
+  <div class="login-role">
+    <span>Comptes :</span>
+    <span class="role-badge role-admin">Administrateur</span>
+    <span style="color:var(--border2)">·</span>
+    <span class="role-badge role-consult">Consultation</span>
+  </div>
+</div>
+</body>
+</html>

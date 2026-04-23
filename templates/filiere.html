@@ -1,0 +1,623 @@
+{% extends 'base.html' %}
+{% block title %}{{ fil.nom }}{% endblock %}
+{% block content %}
+
+{# Build lookup maps #}
+{% set attrs_by_cours_classe = {} %}
+{% set attrs_by_cours_groupe = {} %}
+{% for a in attrs %}
+  {% set k1 = (a.cours_id, a.classe_id) %}
+  {% if k1 not in attrs_by_cours_classe %}{% set _ = attrs_by_cours_classe.update({k1:[]}) %}{% endif %}
+  {% set _ = attrs_by_cours_classe[k1].append(a) %}
+  {% set k2 = (a.cours_id, a.groupe_num) %}
+  {% if k2 not in attrs_by_cours_groupe %}{% set _ = attrs_by_cours_groupe.update({k2:[]}) %}{% endif %}
+  {% set _ = attrs_by_cours_groupe[k2].append(a) %}
+{% endfor %}
+{% set titu_by_classe = {} %}
+{% for t in titulaires %}
+  {% if t.classe_id not in titu_by_classe %}{% set _ = titu_by_classe.update({t.classe_id:[]}) %}{% endif %}
+  {% set _ = titu_by_classe[t.classe_id].append(t) %}
+{% endfor %}
+{% set eleves_by_cours = {} %}
+{% for e in eleves %}{% set _ = eleves_by_cours.update({e.cours_id: e}) %}{% endfor %}
+
+{# Totals #}
+{% set total_h = namespace(val=0) %}
+{% for a in attrs %}
+  {% set c = cours|selectattr('id','eq',a.cours_id)|first %}
+  {% if c %}
+    {% set total_h.val = total_h.val + (a.heures_attr if a.heures_attr else c.heures) %}
+  {% endif %}
+{% endfor %}
+{% set solde = ntpp_total - h_total %}
+
+<div class="topbar">
+  <div>
+    <div class="topbar-title">{{ fil.nom }}</div>
+    <div class="topbar-sub">
+      NTPP total {{ ntpp_total|int }}h ·
+      attribué global {{ h_total|int }}h ·
+      solde <span style="color:{% if solde>=0 %}var(--green-dark){% else %}var(--red){% endif %}">
+        {% if solde>=0 %}+{% endif %}{{ solde|int }}h
+      </span>
+    </div>
+  </div>
+  <button class="btn" onclick="manageClasses({{ fil.id }},'{{ fil.nom }}')">⊞ Classes</button>
+  <button class="btn btn-success" onclick="addCours({{ fil.id }})">+ cours</button>
+</div>
+
+<div class="stats">
+  <div class="stat">
+    <div class="stat-label">Heures cette filière</div>
+    <div class="stat-value">{{ total_h.val|int }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">NTPP total école</div>
+    <div class="stat-value">{{ ntpp_total|int }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Solde global</div>
+    <div class="stat-value {% if solde>=0 %}ok{% elif solde>=-20 %}warn{% else %}err{% endif %}">
+      {% if solde>=0 %}+{% endif %}{{ solde|int }}
+    </div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Profs impliqués</div>
+    <div class="stat-value">{{ attrs|map(attribute='acronyme')|unique|list|length }}</div>
+  </div>
+</div>
+
+<div class="content">
+
+{# ═══ FC ═══ #}
+{% set fc = cours|selectattr('type','eq','FC')|list %}
+{% if fc %}
+<div class="section">
+  <div class="section-head">
+    <span class="tag tag-fc">FC</span>
+    <span class="section-title">Formation commune{% if classes %} — par classe{% endif %}</span>
+    <button class="btn btn-sm" onclick="addCours({{ fil.id }})">+ cours</button>
+  </div>
+  <div style="overflow-x:auto">
+  <table class="tbl">
+    <thead>
+      <tr>
+        <th style="min-width:160px">Cours</th>
+        <th class="c" style="width:40px">h</th>
+        {% for cls in classes %}
+        <th class="c" style="min-width:90px">
+          {{ cls.nom }}
+          {% if cls.commentaire %}
+          <div style="font-size:9px;font-weight:400;color:var(--amber-dark);margin-top:2px">{{ cls.commentaire }}</div>
+          {% endif %}
+          {% if current_user.can_edit %}
+          <button class="btn-icon" style="font-size:9px;opacity:.5"
+                  onclick="editCommentaireClasse({{ cls.id }},'{{ cls.nom }}','{{ cls.commentaire or "" }}')">✎</button>
+          {% endif %}
+        </th>
+        {% endfor %}
+        {% if not classes %}<th>Professeur</th>{% endif %}
+        <th style="width:32px"></th>
+      </tr>
+    </thead>
+    <tbody>
+    {# Titulaires row #}
+    {% if classes %}
+    <tr style="background:var(--amber-pale)">
+      <td style="font-size:10px;font-weight:500;color:var(--amber-dark)">Titulaire(s)</td>
+      <td></td>
+      {% for cls in classes %}
+      <td class="c">
+        <div style="display:flex;flex-wrap:wrap;gap:2px;justify-content:center;min-height:22px">
+          {% if cls.id in titu_by_classe %}
+            {% for t in titu_by_classe[cls.id] %}
+            <span class="pill pill-titu">
+              {{ t.acronyme }}
+              <span class="x" onclick="event.stopPropagation();deleteTitulaire({{ t.id }})">×</span>
+            </span>
+            {% endfor %}
+          {% endif %}
+          <button class="add-pill" onclick="addTitulaireModal({{ cls.id }},'{{ cls.nom }}','{{ annee }}')">+</button>
+        </div>
+      </td>
+      {% endfor %}
+      <td></td>
+    </tr>
+    {% endif %}
+    {# FC courses #}
+    {% for c in fc %}
+    <tr>
+      <td>
+        <span onclick="editCours({{ c.id }},'{{ c.nom }}',{{ c.heures }},'{{ c.type }}')" style="cursor:pointer" title="Modifier">
+          {{ c.nom }}
+        </span>
+      </td>
+      <td class="c" style="color:var(--text2)">{{ c.heures|int }}h</td>
+      {% if classes %}
+        {% for cls in classes %}
+        {% set k = (c.id, cls.id) %}
+        <td class="c" data-attr-id="">
+          {% if k in attrs_by_cours_classe %}
+            {% for a in attrs_by_cours_classe[k] %}
+            <span class="pill {{ a.couleur or '' }}" data-attr-id="{{ a.id }}"
+                  onclick="editAttr({{ a.id }},'{{ a.acronyme }}',{{ a.heures_attr or 'null' }},{{ c.heures }},'{{ a.couleur or '' }}')"
+                  title="{{ a.prenom or '' }} {{ a.pnom or '' }}">
+              {{ a.acronyme }}
+              {% if a.heures_attr and a.heures_attr != c.heures %}
+              <span style="font-size:9px;color:var(--amber)">{{ a.heures_attr|int }}h</span>
+              {% endif %}
+              <span class="x" onclick="event.stopPropagation();deleteAttr({{ a.id }})">×</span>
+            </span>
+            {% endfor %}
+          {% endif %}
+          <button class="add-pill" onclick="addProfModal({{ c.id }},1,{{ cls.id }},'{{ annee }}',{{ c.heures }})">+</button>
+        </td>
+        {% endfor %}
+      {% else %}
+        <td data-attr-id="">
+          {% set k = (c.id, None) %}
+          {% if k in attrs_by_cours_classe %}
+            {% for a in attrs_by_cours_classe[k] %}
+            <span class="pill {{ a.couleur or "" }}" data-attr-id="{{ a.id }}"
+                  onclick="editAttr({{ a.id }},'{{ a.acronyme }}',{{ a.heures_attr or 'null' }},{{ c.heures }})">
+              {{ a.acronyme }}
+              <span class="x" onclick="event.stopPropagation();deleteAttr({{ a.id }})">×</span>
+            </span>
+            {% endfor %}
+          {% endif %}
+          <button class="add-pill" onclick="addProfModal({{ c.id }},1,null,'{{ annee }}',{{ c.heures }})">+</button>
+        </td>
+      {% endif %}
+      <td><button class="btn-icon" onclick="editCours({{ c.id }},'{{ c.nom }}',{{ c.heures }},'{{ c.type }}')">✎</button></td>
+    </tr>
+    {% endfor %}
+    {% if not fc %}<tr class="empty-row"><td colspan="{{ classes|length + 3 }}">Aucun cours FC</td></tr>{% endif %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
+
+{# ═══ OPT ═══ #}
+{% set opt = cours|selectattr('type','eq','OPT')|list %}
+{% if opt %}
+<div class="section">
+  <div class="section-head">
+    <span class="tag tag-opt">OPT</span>
+    <span class="section-title">Options — groupes transversaux</span>
+    {% set tg = namespace(val=0) %}{% set ag = namespace(val=0) %}
+    {% for c in opt %}{% set tg.val = tg.val + (c.nb_groupes or 1) %}{% for g in range(1,(c.nb_groupes or 1)+1) %}{% if (c.id,g) in attrs_by_cours_groupe %}{% set ag.val = ag.val + 1 %}{% endif %}{% endfor %}{% endfor %}
+    <span style="font-size:11px;color:var(--text3);margin-right:4px">
+      <strong style="color:{% if ag.val == tg.val %}var(--green-dark){% else %}var(--amber){% endif %}">{{ ag.val }}/{{ tg.val }}</strong> groupes
+    </span>
+    <div style="display:flex;gap:4px;margin-right:6px">
+      <button class="tab-btn active" id="tab-opt-tbl" onclick="switchTab('opt-tbl',this,'opt')">Tableau</button>
+      <button class="tab-btn" id="tab-opt-hist" onclick="switchTab('opt-hist',this,'opt')">Historique</button>
+    </div>
+    <label class="btn btn-sm" style="cursor:pointer" title="Importer tableau carré Proecco">
+      📥 Tableau carré
+      <input type="file" accept=".xls,.xlsx" style="display:none"
+             onchange="importTableauCarre(this,{{ fil.id }},'{{ annee }}')">
+    </label>
+    <button class="btn btn-sm" onclick="addCours({{ fil.id }})">+ cours</button>
+  </div>
+
+  <div id="opt-tbl" class="tab-pane active">
+  <div style="overflow-x:auto">
+  <table class="tbl">
+    <thead>
+      <tr>
+        <th style="min-width:150px">Option</th>
+        <th class="c" style="width:38px">h</th>
+        <th class="c" style="width:72px">Élèves</th>
+        <th class="c" style="width:88px">Groupes</th>
+        <th>Professeurs par groupe</th>
+        <th style="width:32px"></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for c in opt %}
+    {% set nb_grp = c.nb_groupes or 1 %}
+    {% set elv = eleves_by_cours.get(c.id) %}
+    <tr>
+      <td><span onclick="editCours({{ c.id }},'{{ c.nom }}',{{ c.heures }},'{{ c.type }}')" style="cursor:pointer">{{ c.nom }}</span></td>
+      <td class="c">{{ c.heures|int }}h</td>
+      <td class="c">
+        <input class="input-sm {% if elv and elv.nb_eleves_precedent and elv.nb_eleves != elv.nb_eleves_precedent %}changed{% endif %}"
+               type="number" style="width:58px"
+               value="{{ elv.nb_eleves if elv else '' }}"
+               placeholder="—"
+               title="{% if elv and elv.nb_eleves_precedent and elv.nb_eleves != elv.nb_eleves_precedent %}Était {{ elv.nb_eleves_precedent }} lors du précédent import{% endif %}"
+               onchange="saveEleves({{ c.id }},this.value,'{{ annee }}')">
+      </td>
+      <td class="c">
+        <button class="btn btn-sm" onclick="setGroupes({{ c.id }},'{{ c.nom }}',{{ nb_grp }})">
+          {{ nb_grp }} gr.
+        </button>
+      </td>
+      <td>
+        <div class="grp-wrap">
+        {% for g in range(1, nb_grp + 1) %}
+          {% set k = (c.id, g) %}
+          {% if k in attrs_by_cours_groupe %}
+            <div class="grp-slot grp-ok" data-attr-id="{{ attrs_by_cours_groupe[k][0].id }}">
+              {% for a in attrs_by_cours_groupe[k] %}
+              <span class="pill {{ a.couleur or "" }}" data-attr-id="{{ a.id }}" style="margin:0;font-size:10px"
+                    onclick="editAttr({{ a.id }},'{{ a.acronyme }}',{{ a.heures_attr or 'null' }},{{ c.heures }})">
+                {{ a.acronyme }}
+                {% if a.heures_attr and a.heures_attr != c.heures %}
+                <span style="font-size:9px;color:var(--amber)">{{ a.heures_attr|int }}h</span>
+                {% endif %}
+                <span class="x" onclick="event.stopPropagation();deleteAttr({{ a.id }})">×</span>
+              </span>
+              {% endfor %}
+              <button class="add-pill" style="font-size:9px;padding:1px 4px"
+                      onclick="addProfModal({{ c.id }},{{ g }},null,'{{ annee }}',{{ c.heures }})">+</button>
+            </div>
+          {% else %}
+            <div class="grp-slot grp-empty" data-attr-id="">
+              G{{ g }}
+              <button class="add-pill" style="font-size:9px;padding:1px 4px;border-color:var(--red);color:var(--red)"
+                      onclick="addProfModal({{ c.id }},{{ g }},null,'{{ annee }}',{{ c.heures }})">+</button>
+            </div>
+          {% endif %}
+        {% endfor %}
+        </div>
+      </td>
+      <td><button class="btn-icon" onclick="editCours({{ c.id }},'{{ c.nom }}',{{ c.heures }},'{{ c.type }}')">✎</button></td>
+    </tr>
+    {% endfor %}
+    {% if not opt %}<tr class="empty-row"><td colspan="6">Aucune option</td></tr>{% endif %}
+    </tbody>
+  </table>
+  </div>
+  <div style="padding:7px 13px;font-size:10px;color:var(--text3);display:flex;gap:16px;border-top:1px solid var(--border)">
+    <span style="display:flex;align-items:center;gap:5px"><span style="width:16px;height:10px;border-radius:3px;background:var(--green-pale);border:1px solid var(--green-light)"></span>groupe attribué</span>
+    <span style="display:flex;align-items:center;gap:5px"><span style="width:16px;height:10px;border-radius:3px;border:1.5px dashed var(--red)"></span>groupe vide</span>
+    <span style="display:flex;align-items:center;gap:5px"><span style="width:16px;height:10px;border-radius:10px;background:var(--red-pale);border:1px solid #F09595"></span>nb élèves modifié vs import précédent</span>
+  </div>
+  </div>
+
+  <div id="opt-hist" class="tab-pane">
+  <div style="padding:12px;color:var(--text3);font-size:12px">
+    Importez un tableau carré Proecco via le bouton ci-dessus pour voir l'historique des élèves par option.
+    Les valeurs s'affichent ici une fois importées.
+  </div>
+  </div>
+</div>
+{% endif %}
+
+{# ═══ TT ═══ #}
+{% set tt = cours|selectattr('type','eq','TT')|list %}
+{% if tt %}
+<div class="section">
+  <div class="section-head">
+    <span class="tag tag-tt">TT</span>
+    <span class="section-title">Options TT</span>
+    {% set tgt = namespace(val=0) %}{% set agt = namespace(val=0) %}
+    {% for c in tt %}{% set tgt.val = tgt.val + (c.nb_groupes or 1) %}{% for g in range(1,(c.nb_groupes or 1)+1) %}{% if (c.id,g) in attrs_by_cours_groupe %}{% set agt.val = agt.val + 1 %}{% endif %}{% endfor %}{% endfor %}
+    <span style="font-size:11px;color:var(--text3);margin-right:4px">
+      <strong style="color:{% if agt.val == tgt.val %}var(--green-dark){% else %}var(--amber){% endif %}">{{ agt.val }}/{{ tgt.val }}</strong> groupes
+    </span>
+    <button class="btn btn-sm" onclick="addCours({{ fil.id }})">+ cours</button>
+  </div>
+  <table class="tbl">
+    <thead><tr>
+      <th style="min-width:150px">Cours</th><th class="c" style="width:38px">h</th>
+      <th class="c" style="width:72px">Élèves</th>
+      <th class="c" style="width:88px">Groupes</th>
+      <th>Professeurs par groupe</th>
+      <th style="width:32px"></th>
+    </tr></thead>
+    <tbody>
+    {% for c in tt %}
+    {% set nb_grp = c.nb_groupes or 1 %}
+    {% set elv = eleves_by_cours.get(c.id) %}
+    <tr>
+      <td><span onclick="editCours({{ c.id }},'{{ c.nom }}',{{ c.heures }},'{{ c.type }}')" style="cursor:pointer">{{ c.nom }}</span></td>
+      <td class="c">{{ c.heures|int }}h</td>
+      <td class="c">
+        <input class="input-sm {% if elv and elv.nb_eleves_precedent and elv.nb_eleves != elv.nb_eleves_precedent %}changed{% endif %}"
+               type="number" style="width:58px"
+               value="{{ elv.nb_eleves if elv else '' }}" placeholder="—"
+               title="{% if elv and elv.nb_eleves_precedent and elv.nb_eleves != elv.nb_eleves_precedent %}Était {{ elv.nb_eleves_precedent }}{% endif %}"
+               onchange="saveEleves({{ c.id }},this.value,'{{ annee }}')">
+      </td>
+      <td class="c">
+        <button class="btn btn-sm" onclick="setGroupes({{ c.id }},'{{ c.nom }}',{{ nb_grp }})">{{ nb_grp }} gr.</button>
+      </td>
+      <td>
+        <div class="grp-wrap">
+        {% for g in range(1, nb_grp + 1) %}
+          {% set k = (c.id, g) %}
+          {% if k in attrs_by_cours_groupe %}
+            <div class="grp-slot grp-ok" data-attr-id="{{ attrs_by_cours_groupe[k][0].id }}">
+              {% for a in attrs_by_cours_groupe[k] %}
+              <span class="pill {{ a.couleur or "" }}" data-attr-id="{{ a.id }}" style="margin:0;font-size:10px"
+                    onclick="editAttr({{ a.id }},'{{ a.acronyme }}',{{ a.heures_attr or 'null' }},{{ c.heures }})">
+                {{ a.acronyme }}{% if a.heures_attr and a.heures_attr != c.heures %}<span style="font-size:9px;color:var(--amber)"> {{ a.heures_attr|int }}h</span>{% endif %}
+                <span class="x" onclick="event.stopPropagation();deleteAttr({{ a.id }})">×</span>
+              </span>
+              {% endfor %}
+              <button class="add-pill" style="font-size:9px;padding:1px 4px"
+                      onclick="addProfModal({{ c.id }},{{ g }},null,'{{ annee }}',{{ c.heures }})">+</button>
+            </div>
+          {% else %}
+            <div class="grp-slot grp-empty" data-attr-id="">
+              G{{ g }}<button class="add-pill" style="font-size:9px;padding:1px 4px;border-color:var(--red);color:var(--red)"
+                      onclick="addProfModal({{ c.id }},{{ g }},null,'{{ annee }}',{{ c.heures }})">+</button>
+            </div>
+          {% endif %}
+        {% endfor %}
+        </div>
+      </td>
+      <td><button class="btn-icon" onclick="editCours({{ c.id }},'{{ c.nom }}',{{ c.heures }},'{{ c.type }}')">✎</button></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <div style="padding:7px 13px;font-size:10px;color:var(--text3);display:flex;gap:16px;border-top:1px solid var(--border)">
+    <span style="display:flex;align-items:center;gap:5px"><span style="width:16px;height:10px;border-radius:3px;background:var(--green-pale);border:1px solid var(--green-light)"></span>attribué</span>
+    <span style="display:flex;align-items:center;gap:5px"><span style="width:16px;height:10px;border-radius:3px;border:1.5px dashed var(--red)"></span>vide</span>
+  </div>
+</div>
+{% endif %}
+
+{# ═══ EDPH ═══ #}
+{% set edph = cours|selectattr('type','eq','EDPH')|list %}
+{% if edph %}
+<div class="section">
+  <div class="section-head">
+    <span class="tag tag-edph">EDPH</span>
+    <span class="section-title">Éducation physique</span>
+    {% set tge = namespace(val=0) %}{% set age = namespace(val=0) %}
+    {% for c in edph %}{% set tge.val = tge.val + (c.nb_groupes or 1) %}{% for g in range(1,(c.nb_groupes or 1)+1) %}{% if (c.id,g) in attrs_by_cours_groupe %}{% set age.val = age.val + 1 %}{% endif %}{% endfor %}{% endfor %}
+    <span style="font-size:11px;color:var(--text3);margin-right:4px">
+      <strong style="color:{% if age.val == tge.val %}var(--green-dark){% else %}var(--amber){% endif %}">{{ age.val }}/{{ tge.val }}</strong> groupes
+    </span>
+    <button class="btn btn-sm" onclick="addCours({{ fil.id }})">+ cours</button>
+  </div>
+  <table class="tbl">
+    <thead><tr>
+      <th>Cours</th><th class="c">h</th>
+      <th class="c" style="width:72px">Élèves</th>
+      <th class="c">Groupes</th><th>Professeurs</th><th style="width:32px"></th>
+    </tr></thead>
+    <tbody>
+    {% for c in edph %}
+    {% set nb_grp = c.nb_groupes or 1 %}
+    {% set elv = eleves_by_cours.get(c.id) %}
+    <tr>
+      <td><span onclick="editCours({{ c.id }},'{{ c.nom }}',{{ c.heures }},'{{ c.type }}')" style="cursor:pointer">{{ c.nom }}</span></td>
+      <td class="c">{{ c.heures|int }}h</td>
+      <td class="c">
+        <input class="input-sm {% if elv and elv.nb_eleves_precedent and elv.nb_eleves != elv.nb_eleves_precedent %}changed{% endif %}"
+               type="number" style="width:58px"
+               value="{{ elv.nb_eleves if elv else '' }}" placeholder="—"
+               onchange="saveEleves({{ c.id }},this.value,'{{ annee }}')">
+      </td>
+      <td class="c"><button class="btn btn-sm" onclick="setGroupes({{ c.id }},'{{ c.nom }}',{{ nb_grp }})">{{ nb_grp }}</button></td>
+      <td>
+        <div class="grp-wrap">
+        {% for g in range(1, nb_grp + 1) %}
+          {% set k = (c.id, g) %}
+          {% if k in attrs_by_cours_groupe %}
+            <div class="grp-slot grp-ok" data-attr-id="{{ attrs_by_cours_groupe[k][0].id }}" style="min-width:48px">
+              {% for a in attrs_by_cours_groupe[k] %}
+              <span class="pill {{ a.couleur or "" }}" data-attr-id="{{ a.id }}" style="margin:0;font-size:10px"
+                    onclick="editAttr({{ a.id }},'{{ a.acronyme }}',{{ a.heures_attr or 'null' }},{{ c.heures }})">
+                {{ a.acronyme }}<span class="x" onclick="event.stopPropagation();deleteAttr({{ a.id }})">×</span>
+              </span>
+              {% endfor %}
+              <button class="add-pill" style="font-size:9px;padding:1px 4px"
+                      onclick="addProfModal({{ c.id }},{{ g }},null,'{{ annee }}',{{ c.heures }})">+</button>
+            </div>
+          {% else %}
+            <div class="grp-slot grp-empty" data-attr-id="" style="min-width:48px">G{{ g }}
+              <button class="add-pill" style="font-size:9px;padding:1px 4px;border-color:var(--red);color:var(--red)"
+                      onclick="addProfModal({{ c.id }},{{ g }},null,'{{ annee }}',{{ c.heures }})">+</button>
+            </div>
+          {% endif %}
+        {% endfor %}
+        </div>
+      </td>
+      <td><button class="btn-icon" onclick="editCours({{ c.id }},'{{ c.nom }}',{{ c.heures }},'{{ c.type }}')">✎</button></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{# ═══ AC ═══ #}
+{% set ac = cours|selectattr('type','eq','AC')|list %}
+{% if ac %}
+<div class="section">
+  <div class="section-head">
+    <span class="tag tag-ac">AC</span>
+    <span class="section-title">Activités complémentaires</span>
+    {% set tga = namespace(val=0) %}{% set aga = namespace(val=0) %}
+    {% for c in ac %}{% set tga.val = tga.val + (c.nb_groupes or 1) %}{% for g in range(1,(c.nb_groupes or 1)+1) %}{% if (c.id,g) in attrs_by_cours_groupe %}{% set aga.val = aga.val + 1 %}{% endif %}{% endfor %}{% endfor %}
+    <span style="font-size:11px;color:var(--text3);margin-right:4px">
+      <strong style="color:{% if aga.val == tga.val %}var(--green-dark){% else %}var(--amber){% endif %}">{{ aga.val }}/{{ tga.val }}</strong> groupes
+    </span>
+    <button class="btn btn-sm" onclick="addCours({{ fil.id }})">+ cours</button>
+  </div>
+  <table class="tbl">
+    <thead><tr>
+      <th style="min-width:150px">Cours</th><th class="c" style="width:38px">h</th>
+      <th class="c" style="width:72px">Élèves</th>
+      <th class="c" style="width:88px">Groupes</th>
+      <th>Professeurs par groupe</th>
+      <th style="width:32px"></th>
+    </tr></thead>
+    <tbody>
+    {% for c in ac %}
+    {% set nb_grp = c.nb_groupes or 1 %}
+    {% set elv = eleves_by_cours.get(c.id) %}
+    <tr>
+      <td><span onclick="editCours({{ c.id }},'{{ c.nom }}',{{ c.heures }},'{{ c.type }}')" style="cursor:pointer">{{ c.nom }}</span></td>
+      <td class="c">{{ c.heures|int }}h</td>
+      <td class="c">
+        <input class="input-sm {% if elv and elv.nb_eleves_precedent and elv.nb_eleves != elv.nb_eleves_precedent %}changed{% endif %}"
+               type="number" style="width:58px"
+               value="{{ elv.nb_eleves if elv else '' }}" placeholder="—"
+               onchange="saveEleves({{ c.id }},this.value,'{{ annee }}')">
+      </td>
+      <td class="c">
+        <button class="btn btn-sm" onclick="setGroupes({{ c.id }},'{{ c.nom }}',{{ nb_grp }})">{{ nb_grp }} gr.</button>
+      </td>
+      <td>
+        <div class="grp-wrap">
+        {% for g in range(1, nb_grp + 1) %}
+          {% set k = (c.id, g) %}
+          {% if k in attrs_by_cours_groupe %}
+            <div class="grp-slot grp-ok" data-attr-id="{{ attrs_by_cours_groupe[k][0].id }}">
+              {% for a in attrs_by_cours_groupe[k] %}
+              <span class="pill {{ a.couleur or "" }}" data-attr-id="{{ a.id }}" style="margin:0;font-size:10px"
+                    onclick="editAttr({{ a.id }},'{{ a.acronyme }}',{{ a.heures_attr or 'null' }},{{ c.heures }})">
+                {{ a.acronyme }}<span class="x" onclick="event.stopPropagation();deleteAttr({{ a.id }})">×</span>
+              </span>
+              {% endfor %}
+              <button class="add-pill" style="font-size:9px;padding:1px 4px"
+                      onclick="addProfModal({{ c.id }},{{ g }},null,'{{ annee }}',{{ c.heures }})">+</button>
+            </div>
+          {% else %}
+            <div class="grp-slot grp-empty" data-attr-id="">
+              G{{ g }}<button class="add-pill" style="font-size:9px;padding:1px 4px;border-color:var(--red);color:var(--red)"
+                      onclick="addProfModal({{ c.id }},{{ g }},null,'{{ annee }}',{{ c.heures }})">+</button>
+            </div>
+          {% endif %}
+        {% endfor %}
+        </div>
+      </td>
+      <td><button class="btn-icon" onclick="editCours({{ c.id }},'{{ c.nom }}',{{ c.heures }},'{{ c.type }}')">✎</button></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <div style="padding:7px 13px;font-size:10px;color:var(--text3);display:flex;gap:16px;border-top:1px solid var(--border)">
+    <span style="display:flex;align-items:center;gap:5px"><span style="width:16px;height:10px;border-radius:3px;background:var(--green-pale);border:1px solid var(--green-light)"></span>attribué</span>
+    <span style="display:flex;align-items:center;gap:5px"><span style="width:16px;height:10px;border-radius:3px;border:1.5px dashed var(--red)"></span>vide</span>
+  </div>
+</div>
+{% endif %}
+
+{# ═══ COORD ═══ #}
+{% set coord = cours|selectattr('type','eq','COORD')|list %}
+{% if coord %}
+{% set total_coord = namespace(val=0) %}
+{% for c in coord %}
+  {% set k = (c.id, 1) %}
+  {% if k in attrs_by_cours_groupe %}
+    {% for a in attrs_by_cours_groupe[k] %}
+      {% set total_coord.val = total_coord.val + (a.heures_attr if a.heures_attr else c.heures) %}
+    {% endfor %}
+  {% endif %}
+{% endfor %}
+{% set cats_map = {} %}
+{% for cat in coord_cats %}{% set _ = cats_map.update({cat.id: cat}) %}{% endfor %}
+<div class="section">
+  <div class="section-head">
+    <span class="tag tag-coord">COORD</span>
+    <span class="section-title">Coordination</span>
+    <span style="font-size:11px;color:var(--text3);margin-left:6px">Total : <strong>{{ total_coord.val|int }}h</strong></span>
+    <div style="flex:1"></div>
+    <button class="btn btn-sm" onclick="manageCoordCats()">⚙ Catégories</button>
+    <button class="btn btn-sm" onclick="addCours({{ fil.id }})">+ mission</button>
+  </div>
+
+  {% for cat in coord_cats %}
+    {% set cat_cours = coord|selectattr('coord_cat_id','eq',cat.id)|list %}
+    {% if cat_cours %}
+    {% set cat_total = namespace(val=0) %}
+    {% for c in cat_cours %}{% set k=(c.id,1) %}{% if k in attrs_by_cours_groupe %}{% for a in attrs_by_cours_groupe[k] %}{% set cat_total.val = cat_total.val + (a.heures_attr if a.heures_attr else c.heures) %}{% endfor %}{% endif %}{% endfor %}
+    <div style="background:{{ cat.couleur }}18;border-left:3px solid {{ cat.couleur }};padding:5px 14px;font-size:11px;font-weight:600;color:{{ cat.couleur }};display:flex;align-items:center;gap:8px;border-top:1px solid var(--border)">
+      {{ cat.nom }}
+      <span style="font-weight:400;color:var(--text2);font-size:10px">{{ cat_total.val|int }}h</span>
+    </div>
+    <table class="tbl" style="border-radius:0;border-left:3px solid {{ cat.couleur }}">
+      <tbody>
+      {% for c in cat_cours %}
+      <tr>
+        <td style="padding-left:18px">
+          <span onclick="editCours({{ c.id }},'{{ c.nom }}',{{ c.heures }},'{{ c.type }}')" style="cursor:pointer">{{ c.nom }}</span>
+        </td>
+        <td class="c" style="width:40px">{{ c.heures|int }}h</td>
+        <td>
+          {% set k = (c.id, 1) %}
+          {% if k in attrs_by_cours_groupe %}
+            {% for a in attrs_by_cours_groupe[k] %}
+            <span class="pill {{ a.couleur or "" }}" data-attr-id="{{ a.id }}" onclick="editAttr({{ a.id }},'{{ a.acronyme }}',{{ a.heures_attr or 'null' }},{{ c.heures }},'{{ a.couleur or "" }}')">
+              {{ a.acronyme }}{% if a.heures_attr and a.heures_attr != c.heures %}<span style="font-size:9px;color:var(--amber)"> {{ a.heures_attr|int }}h</span>{% endif %}
+              <span class="x" onclick="event.stopPropagation();deleteAttr({{ a.id }})">×</span>
+            </span>
+            {% endfor %}
+          {% endif %}
+          <button class="add-pill" onclick="addProfModal({{ c.id }},1,null,'{{ annee }}',{{ c.heures }})">+</button>
+        </td>
+        <td style="width:32px"><button class="btn-icon" onclick="editCours({{ c.id }},'{{ c.nom }}',{{ c.heures }},'{{ c.type }}')">✎</button></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  {% endfor %}
+
+  {% set sans_cat = [] %}
+  {% for c in coord %}{% if not c.coord_cat_id %}{% set _ = sans_cat.append(c) %}{% endif %}{% endfor %}
+  {% if sans_cat %}
+  <div style="background:var(--surface2);border-left:3px solid var(--gray-light);padding:5px 14px;font-size:11px;font-weight:600;color:var(--text3);border-top:1px solid var(--border)">Sans catégorie</div>
+  <table class="tbl" style="border-radius:0;border-left:3px solid var(--gray-light)">
+    <tbody>
+    {% for c in sans_cat %}
+    <tr>
+      <td style="padding-left:18px">
+        <span onclick="editCours({{ c.id }},'{{ c.nom }}',{{ c.heures }},'{{ c.type }}')" style="cursor:pointer">{{ c.nom }}</span>
+      </td>
+      <td class="c" style="width:40px">{{ c.heures|int }}h</td>
+      <td>
+        {% set k = (c.id, 1) %}
+        {% if k in attrs_by_cours_groupe %}
+          {% for a in attrs_by_cours_groupe[k] %}
+          <span class="pill {{ a.couleur or "" }}" data-attr-id="{{ a.id }}" onclick="editAttr({{ a.id }},'{{ a.acronyme }}',{{ a.heures_attr or 'null' }},{{ c.heures }},'{{ a.couleur or "" }}')">
+            {{ a.acronyme }}{% if a.heures_attr and a.heures_attr != c.heures %}<span style="font-size:9px;color:var(--amber)"> {{ a.heures_attr|int }}h</span>{% endif %}
+            <span class="x" onclick="event.stopPropagation();deleteAttr({{ a.id }})">×</span>
+          </span>
+          {% endfor %}
+        {% endif %}
+        <button class="add-pill" onclick="addProfModal({{ c.id }},1,null,'{{ annee }}',{{ c.heures }})">+</button>
+      </td>
+      <td style="width:32px"><button class="btn-icon" onclick="editCours({{ c.id }},'{{ c.nom }}',{{ c.heures }},'{{ c.type }}')">✎</button></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endif %}
+
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function switchTab(id, btn, group) {
+  document.querySelectorAll(`#tab-${group}-tbl, #tab-${group}-hist`).forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll(`#${group}-tbl, #${group}-hist`).forEach(p=>p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  btn.classList.add('active');
+}
+function importTableauCarre(input, filiereId, annee) {
+  const form = new FormData();
+  form.append('file', input.files[0]);
+  form.append('filiere_id', filiereId);
+  form.append('annee', annee);
+  toast('Import en cours…','ok');
+  fetch('/api/tableau-carre/import', {method:'POST', body:form})
+    .then(r=>r.json()).then(d=>{
+      if(d.ok) { toast(`${d.updated} option(s) mise(s) à jour`); setTimeout(()=>location.reload(),800); }
+      else toast(d.error||'Erreur','err');
+    });
+}
+</script>
+{% endblock %}

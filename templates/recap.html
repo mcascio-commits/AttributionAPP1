@@ -1,0 +1,105 @@
+{% extends 'base.html' %}
+{% block title %}Récapitulatif{% endblock %}
+{% block content %}
+
+{% set total_vides = namespace(val=0) %}
+{% for f in recap %}{% set total_vides.val = total_vides.val + f.nb_vides %}{% endfor %}
+
+<div class="topbar">
+  <div>
+    <div class="topbar-title">Cours non attribués — {{ annee }}</div>
+    <div class="topbar-sub">
+      {% if total_vides.val == 0 %}
+        <span style="color:var(--green-dark)">✓ Tous les groupes sont attribués</span>
+      {% else %}
+        <span style="color:var(--red)">{{ total_vides.val }} groupe(s) sans professeur</span>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="stats">
+  <div class="stat">
+    <div class="stat-label">Groupes vides</div>
+    <div class="stat-value {% if total_vides.val == 0 %}ok{% else %}err{% endif %}">{{ total_vides.val }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Filières concernées</div>
+    <div class="stat-value">{{ recap|selectattr('nb_vides','gt',0)|list|length }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Cours concernés</div>
+    {% set nc = namespace(val=0) %}
+    {% for f in recap %}{% for c in f.cours %}{% if c.groupes_vides %}{% set nc.val = nc.val + 1 %}{% endif %}{% endfor %}{% endfor %}
+    <div class="stat-value">{{ nc.val }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Statut global</div>
+    <div class="stat-value {% if total_vides.val == 0 %}ok{% else %}err{% endif %}">
+      {% if total_vides.val == 0 %}Complet{% else %}Incomplet{% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="content">
+
+{% if total_vides.val == 0 %}
+<div class="section">
+  <div style="padding:32px;text-align:center">
+    <div style="font-size:48px;margin-bottom:12px">✓</div>
+    <div style="font-size:16px;font-weight:500;color:var(--green-dark)">Toutes les attributions sont complètes</div>
+    <div style="font-size:12px;color:var(--text3);margin-top:6px">Tous les groupes prévus ont un professeur assigné pour {{ annee }}</div>
+  </div>
+</div>
+{% else %}
+
+{% for f in recap %}
+{% if f.nb_vides > 0 %}
+<div class="section">
+  <div class="section-head">
+    <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{{ f.couleur }};flex-shrink:0"></span>
+    <span class="section-title">{{ f.nom }}</span>
+    <span style="font-size:11px;color:var(--text3)">{{ f.degre }}</span>
+    <span class="tag tag-err" style="margin-left:8px">{{ f.nb_vides }} vide{% if f.nb_vides > 1 %}s{% endif %}</span>
+    <a href="/filiere/{{ f.id }}?annee={{ annee }}" class="btn btn-sm" style="margin-left:auto">Ouvrir →</a>
+  </div>
+  <table class="tbl">
+    <thead>
+      <tr>
+        <th>Cours</th>
+        <th class="c" style="width:40px">h</th>
+        <th class="c" style="width:60px">Type</th>
+        <th class="c" style="width:80px">Élèves</th>
+        <th>Groupes vides</th>
+        <th class="c" style="width:90px">Attribués/Total</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for c in f.cours %}
+    {% if c.groupes_vides %}
+    <tr style="background:var(--red-pale)">
+      <td><strong style="color:var(--red-dark)">{{ c.nom }}</strong></td>
+      <td class="c">{{ c.heures|int }}h</td>
+      <td class="c"><span class="tag tag-{{ c.type|lower }}">{{ c.type }}</span></td>
+      <td class="c" style="color:var(--text3)">{{ c.nb_eleves or '—' }}</td>
+      <td>
+        {% for g in c.groupes_vides %}
+        <span style="display:inline-block;background:transparent;border:1.5px dashed var(--red);border-radius:6px;padding:1px 8px;font-size:10px;color:var(--red-dark);margin:2px">G{{ g }}</span>
+        {% endfor %}
+      </td>
+      <td class="c">
+        <span style="font-weight:600;color:var(--red)">{{ c.nb_attribues }}/{{ c.nb_groupes }}</span>
+      </td>
+    </tr>
+    {% endif %}
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endfor %}
+
+{% endif %}
+
+</div>
+{% endblock %}

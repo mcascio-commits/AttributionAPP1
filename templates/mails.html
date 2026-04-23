@@ -1,0 +1,185 @@
+{% extends 'base.html' %}
+{% block title %}Envoi mails{% endblock %}
+{% block content %}
+<div class="topbar"><div class="topbar-title">Envoi des attributions par mail</div></div>
+<div class="content" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start">
+
+<div>
+  <div class="section" style="margin-bottom:10px">
+    <div class="section-head"><span class="section-title">Configuration SMTP (OVH)</span></div>
+    <div style="padding:12px 14px">
+      {% macro field(label, id, val, type='text', placeholder='') %}
+      <div class="form-group">
+        <label class="form-label">{{ label }}</label>
+        <input id="{{ id }}" type="{{ type }}" value="{{ val or '' }}" placeholder="{{ placeholder }}" style="width:100%">
+      </div>
+      {% endmacro %}
+      {{ field('Serveur SMTP','smtp-host', config.smtp_host if config else 'ssl0.ovh.net') }}
+      {{ field('Port','smtp-port', config.smtp_port if config else 465, 'number') }}
+      {{ field('Adresse expéditeur','smtp-user', config.smtp_user if config else '', 'email', 'direction@ecole.be') }}
+      {{ field('Mot de passe','smtp-pass', config.smtp_pass if config else '', 'password') }}
+      {{ field('Nom affiché','smtp-name', config.from_name if config else '', 'text', 'Direction — École') }}
+      <div class="form-group">
+        <label class="form-label">Signature</label>
+        <textarea id="smtp-sig" rows="3" style="width:100%">{{ config.signature if config else '' }}</textarea>
+      </div>
+      <button class="btn btn-primary" onclick="saveConfig()">Enregistrer</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-head"><span class="section-title">Modèles de mail</span>
+      <button class="btn btn-sm btn-success" onclick="newTemplate()">+ nouveau</button>
+    </div>
+    {% for t in templates %}
+    <div style="padding:9px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">
+      <div style="flex:1"><strong style="font-size:12px">{{ t.nom }}</strong>
+        <div style="font-size:10px;color:var(--text3)">{{ t.sujet }}</div></div>
+      <button class="btn btn-sm" onclick="editTemplate({{ t.id }},'{{ t.nom|e }}','{{ t.sujet|e }}')">Modifier</button>
+    </div>
+    {% endfor %}
+    <div style="padding:9px 14px;font-size:10px;color:var(--text3)">
+      Variables : {prenom} {nom} {acronyme} {annee} {signature} {titulariats} {tableau}
+    </div>
+  </div>
+</div>
+
+<div>
+  <div class="section" style="margin-bottom:10px">
+    <div class="section-head"><span class="section-title">Envoyer les attributions</span></div>
+    <div style="padding:12px 14px">
+      <div class="form-group"><label class="form-label">Modèle</label>
+        <select id="send-tmpl">{% for t in templates %}<option value="{{ t.id }}">{{ t.nom }}</option>{% endfor %}</select>
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:8px">
+        <button class="btn btn-sm" onclick="selAll(true)">Tout sélectionner</button>
+        <button class="btn btn-sm" onclick="selAll(false)">Tout désélectionner</button>
+        <span id="sel-count" style="font-size:11px;color:var(--text3);align-self:center"></span>
+      </div>
+      <div style="max-height:300px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius)">
+      <table class="tbl" style="font-size:11px">
+        <thead><tr><th style="width:28px"></th><th>Acronyme</th><th>Nom</th><th>Email</th><th></th></tr></thead>
+        <tbody>
+        {% for p in people %}
+        <tr>
+          <td><input type="checkbox" class="pcheck" data-id="{{ p.id }}" checked onchange="updateCount()"></td>
+          <td><strong>{{ p.acronyme }}</strong></td>
+          <td>{{ p.prenom }} {{ p.nom }}</td>
+          <td style="color:{% if p.email %}var(--text2){% else %}var(--red){% endif %}">{{ p.email or '— manquant —' }}</td>
+          <td><button class="btn btn-sm" onclick="previewMail({{ p.id }},document.getElementById('send-tmpl').value,'{{ annee }}')">Aperçu</button></td>
+        </tr>
+        {% endfor %}
+        {% if not people %}
+        <tr class="empty-row"><td colspan="5">Aucun prof avec email. Complétez dans Personnel →</td></tr>
+        {% endif %}
+        </tbody>
+      </table>
+      </div>
+      <div style="margin-top:10px"><button class="btn btn-primary" onclick="doSend('{{ annee }}')">Envoyer aux sélectionnés</button></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-head"><span class="section-title">Historique</span></div>
+    {% if envois %}
+    <table class="tbl" style="font-size:11px">
+      <thead><tr><th>Personne</th><th>Modèle</th><th>Date</th><th class="c">Statut</th></tr></thead>
+      <tbody>
+      {% for e in envois %}
+      <tr>
+        <td><strong>{{ e.acronyme }}</strong> {{ e.prenom }} {{ e.nom }}</td>
+        <td>{{ e.tnom or '—' }}</td>
+        <td style="color:var(--text3)">{{ e.date_envoi[:16] if e.date_envoi else '—' }}</td>
+        <td class="c">
+          {% if e.statut=='sent' %}<span class="tag tag-ok">Envoyé</span>
+          {% else %}<span class="tag tag-err" title="{{ e.erreur }}">Erreur</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div style="padding:14px;text-align:center;color:var(--text3)">Aucun envoi</div>
+    {% endif %}
+  </div>
+</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', updateCount);
+function updateCount() {
+  const n = document.querySelectorAll('.pcheck:checked').length;
+  document.getElementById('sel-count').textContent = `${n} sélectionné(s)`;
+}
+function selAll(v) { document.querySelectorAll('.pcheck').forEach(c=>c.checked=v); updateCount(); }
+function saveConfig() {
+  api('/api/mail/config','PUT',{
+    smtp_host: document.getElementById('smtp-host').value,
+    smtp_port: parseInt(document.getElementById('smtp-port').value),
+    smtp_user: document.getElementById('smtp-user').value,
+    smtp_pass: document.getElementById('smtp-pass').value,
+    from_name: document.getElementById('smtp-name').value,
+    signature: document.getElementById('smtp-sig').value,
+  }).then(r=>{ if(r.ok) toast('Configuration sauvegardée'); else toast('Erreur','err'); });
+}
+function previewMail(pid, tid, annee) {
+  fetch(`/api/mail/preview/${pid}?annee=${annee}&template_id=${tid}`).then(r=>r.json()).then(d=>{
+    if(!d.ok) return toast(d.error||'Erreur','err');
+    openModal(`<div class="modal-title">Aperçu — ${d.email||'(pas d\'email)'}</div>
+      <div class="form-group"><label class="form-label">Sujet</label>
+        <div style="padding:5px 8px;background:var(--surface2);border-radius:var(--radius);font-size:12px">${d.sujet}</div></div>
+      <div class="form-group"><label class="form-label">Corps</label>
+        <pre style="white-space:pre-wrap;font-size:11px;padding:10px;background:var(--surface2);border-radius:var(--radius);max-height:300px;overflow-y:auto;font-family:inherit">${d.corps}</pre></div>
+      <div class="modal-footer"><button class="btn" onclick="closeModal()">Fermer</button></div>`);
+  });
+}
+function doSend(annee) {
+  const ids = [...document.querySelectorAll('.pcheck:checked')].map(c=>parseInt(c.dataset.id));
+  const tid = parseInt(document.getElementById('send-tmpl').value);
+  if(!ids.length) return toast('Sélectionnez au moins un prof','err');
+  if(!confirm(`Envoyer à ${ids.length} personne(s) ?`)) return;
+  toast('Envoi en cours…');
+  api('/api/mail/send','POST',{personnel_ids:ids,template_id:tid,annee})
+    .then(r=>{
+      const ok=r.results.filter(x=>x.ok).length, err=r.results.filter(x=>!x.ok).length;
+      toast(`${ok} envoyé(s)${err?`, ${err} erreur(s)`:''}`, err?'warn':'ok');
+      setTimeout(()=>location.reload(),2000);
+    });
+}
+function newTemplate() {
+  openModal(`<div class="modal-title">Nouveau modèle</div>
+    <div class="form-group"><label class="form-label">Nom</label><input id="nt-n" style="width:100%"></div>
+    <div class="form-group"><label class="form-label">Sujet</label><input id="nt-s" value="Vos attributions — {annee}" style="width:100%"></div>
+    <div class="form-group"><label class="form-label">Corps</label>
+      <textarea id="nt-c" rows="10" style="width:100%;font-family:monospace;font-size:11px">Bonjour {prenom},
+
+Voici vos attributions pour l'année {annee}.
+
+{titulariats}{tableau}
+
+Cordialement,
+{signature}</textarea></div>
+    <div class="modal-footer"><button class="btn" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-primary" onclick="saveTemplate(null)">Créer</button></div>`);
+}
+function editTemplate(id, nom, sujet) {
+  openModal(`<div class="modal-title">Modifier : ${nom}</div>
+    <div class="form-group"><label class="form-label">Nom</label><input id="nt-n" value="${nom}" style="width:100%"></div>
+    <div class="form-group"><label class="form-label">Sujet</label><input id="nt-s" value="${sujet}" style="width:100%"></div>
+    <div class="form-group"><label class="form-label">Corps (rechargez pour voir le contenu complet)</label>
+      <textarea id="nt-c" rows="6" style="width:100%;font-family:monospace;font-size:11px" placeholder="Rechargez la page pour éditer le corps"></textarea></div>
+    <div class="modal-footer"><button class="btn" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-primary" onclick="saveTemplate(${id})">Enregistrer</button></div>`);
+}
+function saveTemplate(id) {
+  const nom=document.getElementById('nt-n').value.trim();
+  const sujet=document.getElementById('nt-s').value.trim();
+  const corps=document.getElementById('nt-c').value;
+  if(!nom||!sujet) return toast('Nom et sujet requis','err');
+  api('/api/mail/template','POST',{id,nom,sujet,corps}).then(r=>{
+    if(r.ok){toast('Sauvegardé');closeModal();setTimeout(()=>location.reload(),400);}else toast('Erreur','err');
+  });
+}
+</script>
+{% endblock %}

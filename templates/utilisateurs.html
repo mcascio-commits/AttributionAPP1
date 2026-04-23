@@ -1,0 +1,145 @@
+{% extends 'base.html' %}
+{% block title %}Utilisateurs{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <div class="topbar-title">Gestion des utilisateurs</div>
+    <div class="topbar-sub">Max 3 administrateurs · Max 3 comptes consultation</div>
+  </div>
+  <button class="btn btn-primary" onclick="addUserModal()">+ Nouveau compte</button>
+</div>
+
+<div class="content" style="max-width:680px">
+
+  {% for role, label, couleur in [('admin','Administrateurs','var(--blue)'),('consultation','Consultation','var(--gray)')] %}
+  {% set role_users = users|selectattr('role','eq',role)|list %}
+  <div class="section" style="margin-bottom:10px">
+    <div class="section-head">
+      <span style="width:10px;height:10px;border-radius:50%;background:{{ couleur }};flex-shrink:0"></span>
+      <span class="section-title">{{ label }}</span>
+      <span style="font-size:10px;color:var(--text3)">{{ role_users|length }}/{% if role=='admin' %}3{% else %}3{% endif %} comptes</span>
+    </div>
+    {% if role_users %}
+    <table class="tbl">
+      <thead><tr>
+        <th>Identifiant</th><th class="c" style="width:100px">Rôle</th>
+        <th class="c" style="width:80px">Actif</th><th style="width:200px">Actions</th>
+      </tr></thead>
+      <tbody>
+      {% for u in role_users %}
+      <tr>
+        <td><strong>{{ u.username }}</strong>
+          {% if u.id == current_user.id %}
+          <span style="font-size:10px;background:var(--blue-pale);color:var(--blue-dark);padding:1px 7px;border-radius:10px;margin-left:6px">vous</span>
+          {% endif %}
+        </td>
+        <td class="c">
+          <span class="tag {% if u.role=='admin' %}tag-fc{% else %}tag-coord{% endif %}">{{ u.role }}</span>
+        </td>
+        <td class="c">
+          <input type="checkbox" {% if u.actif %}checked{% endif %}
+                 {% if u.id == current_user.id %}disabled{% endif %}
+                 onchange="api('/api/utilisateur/{{ u.id }}','PUT',{actif:this.checked?1:0}).then(()=>toast('Mis à jour'))">
+        </td>
+        <td>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-sm" onclick="changePassword({{ u.id }},'{{ u.username }}')">Mot de passe</button>
+            {% if u.id != current_user.id %}
+            <button class="btn btn-sm" onclick="changeRole({{ u.id }},'{{ u.username }}','{{ u.role }}')">Rôle</button>
+            <button class="btn btn-sm btn-danger" onclick="deleteUser({{ u.id }},'{{ u.username }}')">Supprimer</button>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div style="padding:14px;text-align:center;color:var(--text3);font-size:12px">Aucun compte {{ label|lower }}</div>
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  <div class="section">
+    <div class="section-head"><span class="section-title">Informations</span></div>
+    <div style="padding:12px 14px;font-size:12px;color:var(--text2);display:flex;flex-direction:column;gap:6px">
+      <div>• Les comptes <strong>Administrateur</strong> ont accès complet — modifier, ajouter, supprimer.</div>
+      <div>• Les comptes <strong>Consultation</strong> peuvent voir toutes les données mais pas les modifier.</div>
+      <div>• Vous ne pouvez pas supprimer ou désactiver votre propre compte.</div>
+      <div>• Maximum 3 comptes par rôle.</div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function addUserModal() {
+  openModal(`
+    <div class="modal-title">Nouveau compte</div>
+    <div class="form-group"><label class="form-label">Identifiant</label>
+      <input id="nu-user" placeholder="ex: direction" style="width:220px"></div>
+    <div class="form-group"><label class="form-label">Mot de passe</label>
+      <input id="nu-pass" type="password" placeholder="minimum 6 caractères" style="width:220px"></div>
+    <div class="form-group"><label class="form-label">Rôle</label>
+      <select id="nu-role" style="width:220px">
+        <option value="consultation">Consultation (lecture seule)</option>
+        <option value="admin">Administrateur (accès complet)</option>
+      </select></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-primary" onclick="doAddUser()">Créer</button>
+    </div>`);
+  setTimeout(()=>document.getElementById('nu-user').focus(),80);
+}
+
+function doAddUser() {
+  const username = document.getElementById('nu-user').value.trim();
+  const password = document.getElementById('nu-pass').value;
+  const role     = document.getElementById('nu-role').value;
+  if (!username) return toast('Identifiant requis','err');
+  if (password.length < 6) return toast('Mot de passe trop court (min 6 caractères)','err');
+  api('/api/utilisateur','POST',{username,password,role}).then(r=>{
+    if (!r.ok) return toast(r.error||'Erreur','err');
+    toast('Compte créé'); closeModal(); setTimeout(()=>location.reload(),400);
+  });
+}
+
+function changePassword(id, username) {
+  openModal(`
+    <div class="modal-title">Changer le mot de passe — ${username}</div>
+    <div class="form-group"><label class="form-label">Nouveau mot de passe</label>
+      <input id="cp-pass" type="password" placeholder="minimum 6 caractères" style="width:250px"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-primary" onclick="doChangePassword(${id})">Enregistrer</button>
+    </div>`);
+  setTimeout(()=>document.getElementById('cp-pass').focus(),80);
+}
+
+function doChangePassword(id) {
+  const password = document.getElementById('cp-pass').value;
+  if (password.length < 6) return toast('Mot de passe trop court','err');
+  api(`/api/utilisateur/${id}`,'PUT',{password}).then(r=>{
+    if (!r.ok) return toast('Erreur','err');
+    toast('Mot de passe mis à jour'); closeModal();
+  });
+}
+
+function changeRole(id, username, currentRole) {
+  const newRole = currentRole === 'admin' ? 'consultation' : 'admin';
+  if (!confirm(`Changer le rôle de ${username} de "${currentRole}" vers "${newRole}" ?`)) return;
+  api(`/api/utilisateur/${id}`,'PUT',{role:newRole}).then(r=>{
+    if (!r.ok) return toast('Erreur','err');
+    toast('Rôle mis à jour'); setTimeout(()=>location.reload(),400);
+  });
+}
+
+function deleteUser(id, username) {
+  if (!confirm(`Supprimer le compte "${username}" ?`)) return;
+  api(`/api/utilisateur/${id}`,'DELETE').then(r=>{
+    if (!r.ok) return toast(r.error||'Erreur','err');
+    toast('Compte supprimé'); setTimeout(()=>location.reload(),400);
+  });
+}
+</script>
+{% endblock %}

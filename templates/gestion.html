@@ -1,0 +1,90 @@
+{% extends 'base.html' %}
+{% block title %}Gestion{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div class="topbar-title">Gestion des filières</div>
+  <button class="btn btn-primary" onclick="newFiliere()">+ Nouvelle filière</button>
+</div>
+<div class="content">
+<div class="section">
+  <div class="section-head"><span class="section-title">Filières configurées</span></div>
+  <table class="tbl">
+    <thead><tr><th>Nom</th><th>Degré</th><th>Couleur</th><th class="c">Actif</th><th>Actions</th></tr></thead>
+    <tbody>
+    {% for f in all_filieres %}
+    <tr>
+      <td><strong style="color:{{ f.couleur }}">{{ f.nom }}</strong></td>
+      <td style="color:var(--text3)">{{ f.degre }}</td>
+      <td><span style="display:inline-block;width:16px;height:16px;border-radius:3px;background:{{ f.couleur }};vertical-align:middle"></span></td>
+      <td class="c">
+        <input type="checkbox" {% if f.actif %}checked{% endif %}
+               onchange="api('/api/filiere/{{ f.id }}','PUT',{actif:this.checked?1:0}).then(()=>toast('Mis à jour'))">
+      </td>
+      <td>
+        <div style="display:flex;gap:5px">
+          <a href="/filiere/{{ f.id }}?annee={{ annee }}" class="btn btn-sm">Voir</a>
+          <button class="btn btn-sm" onclick="manageClasses({{ f.id }},'{{ f.nom }}')">Classes</button>
+          <button class="btn btn-sm" onclick="editFiliere({{ f.id }},'{{ f.nom }}','{{ f.degre }}','{{ f.couleur }}')">Modifier</button>
+        </div>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function newFiliere() {
+  const filieres = {{ all_filieres|tojson }};
+  openModal(`<div class="modal-title">Nouvelle filière</div>
+    <div class="form-group"><label class="form-label">Nom *</label>
+      <input id="nf-n" placeholder="ex: 7TQ, DASPA" style="width:180px"></div>
+    <div class="form-group"><label class="form-label">Degré</label>
+      <select id="nf-d" style="width:200px">
+        <option>1er degré</option><option>2e degré GT/TT</option>
+        <option>3e degré GT/TT</option><option>TQ</option>
+        <option>Coordination</option><option>Autre</option>
+      </select></div>
+    <div class="form-group"><label class="form-label">Couleur</label>
+      <input id="nf-c" type="color" value="#378ADD"></div>
+    <div class="form-group"><label class="form-label">Copier les cours depuis</label>
+      <select id="nf-src" style="width:200px">
+        <option value="">— partir de zéro —</option>
+        ${filieres.map(f=>`<option value="${f.id}">${f.nom}</option>`).join('')}
+      </select></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-primary" onclick="doNewFiliere()">Créer</button>
+    </div>`);
+  setTimeout(()=>document.getElementById('nf-n').focus(),80);
+}
+function doNewFiliere() {
+  const nom = document.getElementById('nf-n').value.trim();
+  if(!nom) return toast('Nom requis','err');
+  api('/api/filiere','POST',{
+    nom, degre: document.getElementById('nf-d').value,
+    couleur: document.getElementById('nf-c').value,
+    copier_depuis: document.getElementById('nf-src').value || null,
+  }).then(r=>{ if(!r.ok) return toast('Erreur','err'); closeModal(); toast('Filière créée'); setTimeout(()=>location.reload(),400); });
+}
+function editFiliere(id, nom, degre, couleur) {
+  openModal(`<div class="modal-title">Modifier la filière</div>
+    <div class="form-group"><label class="form-label">Nom</label><input id="ef-n" value="${nom}" style="width:180px"></div>
+    <div class="form-group"><label class="form-label">Degré</label><input id="ef-d" value="${degre}" style="width:200px"></div>
+    <div class="form-group"><label class="form-label">Couleur</label><input id="ef-c" type="color" value="${couleur}"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-primary" onclick="doEditFiliere(${id})">Enregistrer</button>
+    </div>`);
+}
+function doEditFiliere(id) {
+  api(`/api/filiere/${id}`,'PUT',{
+    nom: document.getElementById('ef-n').value.trim(),
+    degre: document.getElementById('ef-d').value.trim(),
+    couleur: document.getElementById('ef-c').value,
+  }).then(r=>{ if(!r.ok) return toast('Erreur','err'); closeModal(); toast('Mis à jour'); setTimeout(()=>location.reload(),400); });
+}
+</script>
+{% endblock %}

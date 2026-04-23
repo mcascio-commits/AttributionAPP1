@@ -1,0 +1,79 @@
+{% extends 'base.html' %}
+{% block title %}Matières{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <div class="topbar-title">Vue par matière — {{ annee }}</div>
+    <div class="topbar-sub">Tous les cours regroupés par matière, toutes filières</div>
+  </div>
+  <input id="search-mat" placeholder="Rechercher une matière…" style="width:220px"
+         oninput="filterMatieres(this.value)">
+</div>
+<div class="content">
+{% for key, cours_list in groups %}
+{% set has_attrs = cours_list|selectattr('id','in',attrs_map)|list %}
+<div class="section matiere-section" data-nom="{{ key }}" style="margin-bottom:8px">
+  <div class="section-head">
+    <span class="section-title" style="text-transform:capitalize">
+      {{ cours_list[0].nom }}
+    </span>
+    <span style="font-size:10px;color:var(--text3)">{{ cours_list|length }} filière(s)</span>
+  </div>
+  <table class="tbl">
+    <thead>
+      <tr>
+        <th style="width:160px">Filière</th>
+        <th class="c" style="width:40px">h</th>
+        <th class="c" style="width:60px">Type</th>
+        <th>Professeur(s)</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for c in cours_list|sort(attribute='fil_ordre') %}
+    {% set c_attrs = attrs_map.get(c.id, []) %}
+    <tr>
+      <td>
+        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:{{ c.couleur }};margin-right:6px"></span>
+        <a href="/filiere/{{ c.filiere_id }}?annee={{ annee }}" style="color:var(--text);text-decoration:none">
+          {{ c.filiere_nom }}
+        </a>
+      </td>
+      <td class="c">{{ c.heures|int }}h</td>
+      <td class="c"><span class="tag tag-{{ c.type|lower }}">{{ c.type }}</span></td>
+      <td>
+        {% if c_attrs %}
+          {% for a in c_attrs %}
+          <span class="pill" style="font-size:10px;cursor:default"
+                title="{{ a.prenom or '' }} {{ a.pnom or '' }}{% if a.heures_attr %} — {{ a.heures_attr|int }}h{% endif %}">
+            {{ a.acronyme }}
+            {% if a.heures_attr and a.heures_attr != c.heures %}
+            <span style="font-size:9px;color:var(--amber)">{{ a.heures_attr|int }}h</span>
+            {% endif %}
+          </span>
+          {% endfor %}
+        {% else %}
+          <span style="font-size:10px;color:var(--red);opacity:.7">— non attribué —</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endfor %}
+{% if not groups %}
+<div style="text-align:center;padding:40px;color:var(--text3)">Aucune matière trouvée</div>
+{% endif %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function filterMatieres(q) {
+  q = q.toLowerCase().trim();
+  document.querySelectorAll('.matiere-section').forEach(s => {
+    const nom = s.dataset.nom || '';
+    s.style.display = !q || nom.includes(q) ? '' : 'none';
+  });
+}
+</script>
+{% endblock %}

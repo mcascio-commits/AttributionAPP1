@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+{% block title %}Accueil{% endblock %}
+{% block content %}
+<div class="topbar"><div class="topbar-title">Attributions {{ annee }}</div></div>
+<div class="content" style="max-width:680px">
+  <div class="section" style="margin-top:8px">
+    <div class="section-head"><span class="section-title">Choisir une filière</span></div>
+    <div style="padding:12px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+      {% for f in filieres %}
+      <a href="/filiere/{{ f.id }}?annee={{ annee }}"
+         style="display:block;padding:11px;background:var(--surface2);border:1px solid var(--border);
+                border-radius:var(--radius);text-decoration:none;color:var(--text);
+                border-left:3px solid {{ f.couleur }}">
+        <div style="font-weight:600;font-size:13px">{{ f.nom }}</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:2px">{{ f.degre }}</div>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+    {% for label, url, desc in [
+      ('NTPP', '/ntpp?annee='~annee, 'Gérer les quotas d\'heures'),
+      ('Synthèse', '/synthese?annee='~annee, 'Total heures par professeur'),
+      ('Personnel', '/personnel', 'Gérer noms et adresses mail'),
+      ('Envoi mails', '/mails', 'Envoyer les attributions'),
+    ] %}
+    <a href="{{ url }}" style="display:block;padding:11px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);text-decoration:none;color:var(--text)">
+      <div style="font-weight:600">{{ label }}</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:2px">{{ desc }}</div>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

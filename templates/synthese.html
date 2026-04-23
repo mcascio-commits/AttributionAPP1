@@ -1,0 +1,88 @@
+{% extends 'base.html' %}
+{% block title %}Synthèse{% endblock %}
+{% block content %}
+{% set titu_map = {} %}
+{% for t in titu %}
+  {% if t.personnel_id not in titu_map %}{% set _ = titu_map.update({t.personnel_id:[]}) %}{% endif %}
+  {% set _ = titu_map[t.personnel_id].append(t) %}
+{% endfor %}
+<div class="topbar">
+  <div class="topbar-title">Synthèse — {{ annee }}</div>
+  <a href="/export/excel?annee={{ annee }}" class="btn">Exporter Excel</a>
+</div>
+<div class="content">
+<div class="section">
+  <div class="section-head"><span class="section-title">Total heures par professeur</span>
+    <span style="font-size:11px;color:var(--text3)">{{ data|selectattr('total','gt',0)|list|length }} profs actifs · cliquer pour le détail</span>
+  </div>
+  <table class="tbl">
+    <thead>
+      <tr><th>Acronyme</th><th>Nom</th><th>Prénom</th>
+          <th class="r">Attribué</th><th class="r">Nommé</th><th class="r">Écart</th><th class="r">Min</th><th class="r">Max</th>
+          <th>Statut</th><th>Titulariats</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for p in data %}
+    {% if p.total > 0 or p.heures_min > 0 %}
+    {% set alerte = p.heures_min > 0 and p.total < p.heures_min %}
+    <tr style="{% if alerte %}background:var(--red-pale){% endif %}">
+      <td><strong {% if alerte %}style="color:var(--red)"{% endif %}>{{ p.acronyme }}</strong></td>
+      <td>{{ p.nom or '—' }}</td>
+      <td>{{ p.prenom or '—' }}</td>
+      <td class="r"><strong {% if alerte %}style="color:var(--red)"{% endif %}>{{ p.total|int }}h</strong></td>
+      <td class="r" style="color:var(--text3)">{{ p.heures_min|int if p.heures_min else '—' }}</td>
+      <td class="r" style="color:var(--text3)">{{ p.heures_max|int if p.heures_max else '—' }}</td>
+      <td>
+        {% if alerte %}<span class="tag tag-err">Insuffisant</span>
+        {% elif p.heures_max and p.total > p.heures_max %}<span class="tag tag-warn">Dépassement</span>
+        {% elif p.total > 0 %}<span class="tag tag-ok">OK</span>{% endif %}
+      </td>
+      <td style="font-size:10px;color:var(--text3)">
+        {% if p.id in titu_map %}
+          {% for t in titu_map[p.id] %}
+          <span style="display:inline-block;background:var(--amber-pale);border-radius:10px;padding:0 5px;margin:1px">{{ t.filiere }}/{{ t.classe }}</span>
+          {% endfor %}
+        {% endif %}
+      </td>
+      <td><button class="btn btn-sm" onclick="showDetail({{ p.id }},'{{ p.acronyme }}','{{ annee }}')">Détail</button></td>
+    </tr>
+    {% endif %}
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function showDetail(pid, acro, annee) {
+  fetch(`/api/synthese/${pid}?annee=${annee}`).then(r=>r.json()).then(d=>{
+    const attrs = d.attributions; const titu = d.titulariats;
+    let total = 0;
+    const rows = attrs.map(a => {
+      total += a.h;
+      return `<tr><td>${a.filiere}</td><td>${a.classe}</td><td>${a.nom}</td>
+              <td class="c"><span class="tag tag-${a.type.toLowerCase()}">${a.type}</span></td>
+              <td class="r"><strong>${a.h}h</strong></td></tr>`;
+    }).join('');
+    const tituRows = titu.length ? `<div style="margin-top:12px;padding:10px;background:var(--amber-pale);border-radius:var(--radius)">
+      <strong style="font-size:11px;color:var(--amber-dark)">Titulariats :</strong>
+      ${titu.map(t=>`<span style="margin-left:8px;font-size:11px">${t.filiere} / ${t.classe}</span>`).join('')}
+    </div>` : '';
+    openModal(`
+      <div class="modal-title">${acro} — Détail des attributions</div>
+      <table class="tbl" style="font-size:11px">
+        <thead><tr><th>Filière</th><th>Classe</th><th>Cours</th><th class="c">Type</th><th class="r">H</th></tr></thead>
+        <tbody>${rows||'<tr class="empty-row"><td colspan="5">Aucune attribution</td></tr>'}</tbody>
+        <tfoot><tr style="border-top:2px solid var(--border)">
+          <td colspan="4" style="text-align:right;font-weight:600;padding:6px 10px">TOTAL</td>
+          <td class="r" style="font-weight:600;font-size:13px">${total}h</td>
+        </tr></tfoot>
+      </table>
+      ${tituRows}
+      <div class="modal-footer"><button class="btn" onclick="closeModal()">Fermer</button></div>`);
+  });
+}
+</script>
+{% endblock %}

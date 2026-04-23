@@ -1,0 +1,91 @@
+{% extends 'base.html' %}
+{% block title %}NTPP{% endblock %}
+{% block content %}
+{% set total_pos = namespace(val=0) %}
+{% set total_neg = namespace(val=0) %}
+{% for c in cats %}
+  {% if not c.parent_id %}
+    {% if c.signe == 1 %}{% set total_pos.val = total_pos.val + c.valeur %}
+    {% else %}{% set total_neg.val = total_neg.val + c.valeur %}{% endif %}
+  {% else %}
+    {% set total_pos.val = total_pos.val + c.valeur %}
+  {% endif %}
+{% endfor %}
+{% set solde = ntpp_total - h_total %}
+
+<div class="topbar">
+  <div>
+    <div class="topbar-title">NTPP — {{ annee }}</div>
+    <div class="topbar-sub">
+      Total : <strong>{{ ntpp_total|int }}h</strong> ·
+      Attribué : <strong>{{ h_total|int }}h</strong> ·
+      Solde : <strong style="color:{% if solde>=0 %}var(--green-dark){% else %}var(--red){% endif %}">
+        {% if solde>=0 %}+{% endif %}{{ solde|int }}h
+      </strong>
+    </div>
+  </div>
+  <button class="btn btn-success" onclick="addNtppCat(1)">+ catégorie</button>
+  <button class="btn btn-danger" onclick="addNtppCat(-1)">− catégorie</button>
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="stat-label">NTPP total</div><div class="stat-value">{{ ntpp_total|int }}</div></div>
+  <div class="stat"><div class="stat-label">Apports (+)</div><div class="stat-value ok">+{{ total_pos.val|int }}</div></div>
+  <div class="stat"><div class="stat-label">Prélèvements (−)</div><div class="stat-value err">−{{ total_neg.val|int }}</div></div>
+  <div class="stat">
+    <div class="stat-label">Solde</div>
+    <div class="stat-value {% if solde>=0 %}ok{% elif solde>=-20 %}warn{% else %}err{% endif %}">
+      {% if solde>=0 %}+{% endif %}{{ solde|int }}
+    </div>
+  </div>
+</div>
+
+<div class="content" style="max-width:680px">
+<div class="section">
+  <div class="section-head">
+    <span class="section-title">Catégories NTPP</span>
+    <span style="font-size:10px;color:var(--text3)">Cliquez sur une valeur pour la modifier</span>
+  </div>
+
+  {% set ecole_id = namespace(val=None) %}
+  {% for c in cats %}{% if c.nom == 'École' and not c.parent_id %}{% set ecole_id.val = c.id %}{% endif %}{% endfor %}
+
+  {% for c in cats %}
+  {% if not c.parent_id %}
+  <div class="ntpp-row">
+    <span class="ntpp-sign {% if c.signe==1 %}pos{% else %}neg{% endif %}">{% if c.signe==1 %}+{% else %}−{% endif %}</span>
+    <span style="flex:1;font-size:12px;font-weight:500">{{ c.nom }}</span>
+    <input type="number" step="0.5" class="input-sm" style="width:90px"
+           value="{{ c.valeur|int if c.valeur else '' }}" placeholder="0"
+           onchange="saveNtppVal({{ c.id }},this.value,'{{ annee }}');setTimeout(()=>location.reload(),600)">
+    <span style="font-size:11px;color:var(--text3);width:16px">h</span>
+    <button class="btn-icon" onclick="editNtppCat({{ c.id }},'{{ c.nom }}',{{ c.signe }})">✎</button>
+    <button class="btn-icon" style="color:var(--red)" onclick="deleteNtppCat({{ c.id }},'{{ c.nom }}')">✕</button>
+  </div>
+  {% else %}
+  <div class="ntpp-row sub">
+    <span style="font-size:11px;color:var(--text3)">↳</span>
+    <span style="flex:1;font-size:11px">{{ c.nom }}</span>
+    <input type="number" step="0.5" class="input-sm" style="width:90px;font-size:11px"
+           value="{{ c.valeur|int if c.valeur else '' }}" placeholder="0"
+           onchange="saveNtppVal({{ c.id }},this.value,'{{ annee }}');setTimeout(()=>location.reload(),600)">
+    <span style="font-size:11px;color:var(--text3);width:16px">h</span>
+    <button class="btn-icon" style="font-size:10px" onclick="editNtppCat({{ c.id }},'{{ c.nom }}',1)">✎</button>
+    <button class="btn-icon" style="color:var(--red);font-size:10px" onclick="deleteNtppCat({{ c.id }},'{{ c.nom }}')">✕</button>
+  </div>
+  {% endif %}
+  {% endfor %}
+
+  {% if ecole_id.val %}
+  <div style="padding:8px 14px;background:var(--surface2);border-top:1px solid var(--border)">
+    <button class="btn btn-sm" onclick="addNtppCat(1,{{ ecole_id.val }})">+ école partenaire</button>
+  </div>
+  {% endif %}
+
+  <div style="padding:10px 14px;display:flex;gap:8px;border-top:1px solid var(--border)">
+    <button class="btn btn-success btn-sm" onclick="addNtppCat(1)">+ catégorie positive</button>
+    <button class="btn btn-sm btn-danger" onclick="addNtppCat(-1)">− catégorie négative</button>
+  </div>
+</div>
+</div>
+{% endblock %}
