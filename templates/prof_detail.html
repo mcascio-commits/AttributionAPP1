@@ -1,0 +1,159 @@
+{% extends 'base.html' %}
+{% block title %}{{ prof.acronyme }}{% endblock %}
+{% block content %}
+
+{% set ecart = total_attribue - total_nomme %}
+
+<div class="topbar">
+  <div>
+    <div class="topbar-title">
+      {{ prof.acronyme }}
+      {% if prof.prenom or prof.nom %}
+      <span style="font-weight:400;color:var(--text2);font-size:14px">— {{ prof.prenom }} {{ prof.nom }}</span>
+      {% endif %}
+    </div>
+    <div class="topbar-sub">{{ prof.email or '' }} {% if prof.statut %}· {{ prof.statut }}{% endif %}</div>
+  </div>
+  <a href="/personnel" class="btn">← Retour</a>
+</div>
+
+<div class="stats">
+  <div class="stat">
+    <div class="stat-label">Heures attribuées</div>
+    <div class="stat-value">{{ total_attribue|int }}h</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Heures nommées</div>
+    <div class="stat-value {% if total_nomme > 0 %}ok{% else %}warn{% endif %}">{{ total_nomme|int }}h</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Écart attribué/nommé</div>
+    <div class="stat-value {% if ecart == 0 %}ok{% elif ecart > 0 %}warn{% else %}err{% endif %}">
+      {% if ecart > 0 %}+{% endif %}{{ ecart|int }}h
+    </div>
+    <div class="stat-sub">{% if ecart > 0 %}plus que la nomination{% elif ecart < 0 %}moins que la nomination{% else %}conforme{% endif %}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Titulariats</div>
+    <div class="stat-value">{{ titu|length }}</div>
+  </div>
+</div>
+
+<div class="content" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start">
+
+  <!-- Attributions -->
+  <div>
+    <div class="section">
+      <div class="section-head">
+        <span class="section-title">Attributions {{ annee }}</span>
+        <span style="font-size:10px;color:var(--text3)">{{ attrs|length }} cours</span>
+      </div>
+      {% if titu %}
+      <div style="padding:8px 14px;background:var(--amber-pale);border-bottom:1px solid #FAC775;font-size:11px;color:var(--amber-dark)">
+        <strong>Titulaire :</strong>
+        {% for t in titu %}{{ t.filiere }}/{{ t.classe }}{% if not loop.last %}, {% endif %}{% endfor %}
+      </div>
+      {% endif %}
+      {% if attrs %}
+      <table class="tbl">
+        <thead><tr>
+          <th>Cours</th><th class="c" style="width:60px">Type</th>
+          <th style="width:120px">Filière/Classe</th><th class="r" style="width:50px">h</th>
+        </tr></thead>
+        <tbody>
+        {% set current_fil = namespace(val='') %}
+        {% for a in attrs %}
+        {% if a.filiere_nom != current_fil.val %}
+        {% set current_fil.val = a.filiere_nom %}
+        <tr style="background:{{ a.fil_couleur }}15">
+          <td colspan="4" style="font-size:10px;font-weight:600;color:{{ a.fil_couleur }};padding:4px 10px">
+            <a href="/filiere/{{ a.filiere_id }}?annee={{ annee }}" style="color:inherit;text-decoration:none">{{ a.filiere_nom }}</a>
+          </td>
+        </tr>
+        {% endif %}
+        <tr>
+          <td style="padding-left:18px">{{ a.cours_nom }}</td>
+          <td class="c"><span class="tag tag-{{ a.type|lower }}">{{ a.type }}</span></td>
+          <td style="color:var(--text3);font-size:11px">{{ a.classe_nom }}</td>
+          <td class="r"><strong>{{ a.h|int }}h</strong></td>
+        </tr>
+        {% endfor %}
+        <tr style="border-top:2px solid var(--border)">
+          <td colspan="3" style="text-align:right;font-weight:600;padding:6px 10px">TOTAL</td>
+          <td class="r" style="font-weight:600;font-size:14px">{{ total_attribue|int }}h</td>
+        </tr>
+        </tbody>
+      </table>
+      {% else %}
+      <div style="padding:20px;text-align:center;color:var(--text3)">Aucune attribution pour {{ annee }}</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Nominations -->
+  <div>
+    <div class="section" style="margin-bottom:10px">
+      <div class="section-head">
+        <span class="section-title">Nominations Proecco</span>
+        <span style="font-size:10px;color:var(--text3)">{{ total_nomme|int }}h au total</span>
+        {% if current_user.can_edit %}
+        <button class="btn btn-sm btn-success" onclick="manageNominations({{ prof.id }},'{{ prof.acronyme }}')">+ Modifier</button>
+        {% endif %}
+      </div>
+      {% if nominations %}
+      <table class="tbl">
+        <thead><tr><th>Fonction/Matière</th><th class="r" style="width:60px">h nommées</th><th class="r" style="width:70px">Attribué</th><th class="r" style="width:60px">Écart</th></tr></thead>
+        <tbody>
+        {% for n in nominations %}
+        {% set h_attr = namespace(val=0) %}
+        {% for a in attrs %}
+          {% set nom_lower = n.matiere|lower %}
+          {% set cours_lower = a.cours_nom|lower %}
+          {% if nom_lower[:6] in cours_lower or cours_lower[:6] in nom_lower %}
+            {% set h_attr.val = h_attr.val + a.h %}
+          {% endif %}
+        {% endfor %}
+        {% set ec = h_attr.val - n.heures %}
+        <tr>
+          <td style="font-size:11px">{{ n.matiere }}</td>
+          <td class="r"><strong>{{ n.heures|int }}h</strong></td>
+          <td class="r" style="color:var(--text2)">{{ h_attr.val|int }}h</td>
+          <td class="r" style="color:{% if ec == 0 %}var(--green-dark){% elif ec > 0 %}var(--amber){% else %}var(--red){% endif %};font-size:11px">
+            {% if ec > 0 %}+{% endif %}{{ ec|int }}
+          </td>
+        </tr>
+        {% endfor %}
+        <tr style="border-top:2px solid var(--border)">
+          <td style="font-weight:600;padding:6px 10px">TOTAL</td>
+          <td class="r" style="font-weight:600">{{ total_nomme|int }}h</td>
+          <td class="r" style="font-weight:600">{{ total_attribue|int }}h</td>
+          <td class="r" style="font-weight:600;color:{% if ecart == 0 %}var(--green-dark){% elif ecart > 0 %}var(--amber){% else %}var(--red){% endif %}">
+            {% if ecart > 0 %}+{% endif %}{{ ecart|int }}h
+          </td>
+        </tr>
+        </tbody>
+      </table>
+      {% else %}
+      <div style="padding:20px;text-align:center;color:var(--text3);font-size:12px">
+        Aucune nomination encodée.<br>
+        <span style="font-size:11px">Importez le fichier Proecco depuis la page Personnel.</span>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Alerte si écart -->
+    {% if total_nomme > 0 and ecart != 0 %}
+    <div class="section" style="border-color:{% if ecart > 0 %}#FAC775{% else %}#F09595{% endif %}">
+      <div style="padding:12px 14px;font-size:12px;color:{% if ecart > 0 %}var(--amber-dark){% else %}var(--red-dark){% endif %}">
+        {% if ecart > 0 %}
+        ⚠ {{ prof.acronyme }} a <strong>{{ ecart|int }}h de plus</strong> que sa nomination.
+        {% else %}
+        ⚠ {{ prof.acronyme }} a <strong>{{ (ecart * -1)|int }}h de moins</strong> que sa nomination.
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

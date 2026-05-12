@@ -200,4 +200,4 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue);bo
 .pill-purple { background:#EEEDFE!important;border-color:#AFA9EC!important;color:#3C3489!important; }
 
 /* Prof tooltip */
-#prof-tooltip { transition: opacity .15s; }
+#prof-tooltip { transition: opacity .15s; max-width: 320px !important; }
