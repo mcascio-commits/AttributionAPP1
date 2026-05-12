@@ -122,7 +122,7 @@ function addProfModal(coursId, groupeNum, classeId, annee, heuresCours, onSucces
     }).then(r => {
       if (!r.ok) return toast(r.error||'Erreur','err');
       closeModal(); toast('Ajouté');
-      if (onSuccess) onSuccess(); else setTimeout(()=>window.location.href=window.location.href,300);
+      if (onSuccess) onSuccess(); else window.location.assign(window.location.href);
     });
   };
 }
@@ -146,17 +146,17 @@ function addTitulaireModal(classeId, classeNom, annee) {
     const acro = inp.value.trim().toUpperCase();
     if (!acro) return toast('Acronyme requis','err');
     api('/api/titulaire','POST',{classe_id:classeId, acronyme:acro, annee})
-      .then(r => { if(!r.ok) return toast('Erreur','err'); closeModal(); toast('Titulaire ajouté'); setTimeout(()=>window.location.href=window.location.href,300); });
+      .then(r => { if(!r.ok) return toast('Erreur','err'); closeModal(); toast('Titulaire ajouté'); window.location.assign(window.location.href); });
   };
 }
 
 function deleteTitulaire(id) {
-  api(`/api/titulaire/${id}`,'DELETE').then(()=>{toast('Supprimé');setTimeout(()=>window.location.href=window.location.href,300)});
+  api(`/api/titulaire/${id}`,'DELETE').then(()=>{toast('Supprimé');window.location.assign(window.location.href)});
 }
 
 // ── Attribution ───────────────────────────────────────────────────────────────
 function deleteAttr(id) {
-  api(`/api/attribution/${id}`,'DELETE').then(()=>{toast('Supprimé');setTimeout(()=>window.location.href=window.location.href,300)});
+  api(`/api/attribution/${id}`,'DELETE').then(()=>{toast('Supprimé');window.location.assign(window.location.href)});
 }
 
 function editAttr(id, acro, heuresAttr, heuresCours, currentColor) {
@@ -204,7 +204,7 @@ function doEditAttr(id) {
   const h     = document.getElementById('ea-h').value;
   const color = document.getElementById('ea-color')?.value || '';
   api(`/api/attribution/${id}`,'PUT',{acronyme:acro, heures_attr: h ? parseFloat(h) : null, couleur: color})
-    .then(r => { if(!r.ok) return toast('Erreur','err'); closeModal(); toast('Mis à jour'); setTimeout(()=>window.location.href=window.location.href,300); });
+    .then(r => { if(!r.ok) return toast('Erreur','err'); closeModal(); toast('Mis à jour'); window.location.assign(window.location.href); });
 }
 
 // ── Cours management ──────────────────────────────────────────────────────────
@@ -219,7 +219,7 @@ function editCours(id, nom, heures, type) {
       <select id="ec-type">${['FC','OPT','TT','EDPH','COORD','AC'].map(t=>`<option ${t===type?'selected':''}>${t}</option>`).join('')}</select></div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal()">Annuler</button>
-      <button class="btn btn-danger btn-sm" onclick="if(confirm('Supprimer ce cours ?'))api('/api/cours/${id}','DELETE').then(()=>{closeModal();toast('Supprimé');setTimeout(()=>window.location.href=window.location.href,300)})">Supprimer</button>
+      <button class="btn btn-danger btn-sm" onclick="if(confirm('Supprimer ce cours ?'))api('/api/cours/${id}','DELETE').then(()=>{closeModal();toast('Supprimé');window.location.assign(window.location.href)})">Supprimer</button>
       <button class="btn btn-primary" onclick="doEditCours(${id})">Enregistrer</button>
     </div>`);
   setTimeout(()=>document.getElementById('ec-nom').focus(),80);
@@ -230,7 +230,7 @@ function doEditCours(id) {
     nom: document.getElementById('ec-nom').value.trim(),
     heures: parseFloat(document.getElementById('ec-h').value)||0,
     type: document.getElementById('ec-type').value,
-  }).then(r=>{ if(!r.ok) return toast('Erreur','err'); closeModal(); toast('Mis à jour'); setTimeout(()=>window.location.href=window.location.href,300); });
+  }).then(r=>{ if(!r.ok) return toast('Erreur','err'); closeModal(); toast('Mis à jour'); window.location.assign(window.location.href); });
 }
 
 function addCours(filiereId) {
@@ -254,7 +254,7 @@ function doAddCours(filiereId) {
     filiere_id:filiereId, nom,
     heures: parseFloat(document.getElementById('ac-h').value)||0,
     type: document.getElementById('ac-type').value,
-  }).then(r=>{ if(!r.ok) return toast('Erreur','err'); closeModal(); toast('Cours ajouté'); setTimeout(()=>window.location.href=window.location.href,300); });
+  }).then(r=>{ if(!r.ok) return toast('Erreur','err'); closeModal(); toast('Cours ajouté'); window.location.assign(window.location.href); });
 }
 
 // ── Classes management ────────────────────────────────────────────────────────
@@ -329,7 +329,7 @@ function doSetGroupes(coursId) {
   const nb = Math.max(1, parseInt(document.getElementById('sg-nb').value)||1);
   api(`/api/cours/${coursId}`,'PUT',{nb_groupes:nb}).then(r=>{
     if(!r.ok) return toast('Erreur','err');
-    toast(`${nb} groupe(s) configuré(s)`); closeModal(); setTimeout(()=>window.location.href=window.location.href,300);
+    toast(`${nb} groupe(s) configuré(s)`); closeModal(); window.location.assign(window.location.href);
   });
 }
 
@@ -363,7 +363,7 @@ function doAddNtppCat(signe, parentId) {
   const s = document.getElementById('nc-s') ? parseInt(document.getElementById('nc-s').value) : signe;
   if(!nom) return toast('Nom requis','err');
   api('/api/ntpp/categorie','POST',{nom,signe:s,parent_id:parentId})
-    .then(r=>{ if(!r.ok) return toast('Erreur','err'); closeModal(); toast('Catégorie ajoutée'); setTimeout(()=>window.location.href=window.location.href,300); });
+    .then(r=>{ if(!r.ok) return toast('Erreur','err'); closeModal(); toast('Catégorie ajoutée'); window.location.assign(window.location.href); });
 }
 
 function editNtppCat(id, nom, signe) {
@@ -384,12 +384,12 @@ function doEditNtppCat(id) {
   api(`/api/ntpp/categorie/${id}`,'PUT',{
     nom: document.getElementById('en-n').value.trim(),
     signe: parseInt(document.getElementById('en-s').value),
-  }).then(r=>{ if(!r.ok) return toast('Erreur','err'); closeModal(); toast('Mis à jour'); setTimeout(()=>window.location.href=window.location.href,300); });
+  }).then(r=>{ if(!r.ok) return toast('Erreur','err'); closeModal(); toast('Mis à jour'); window.location.assign(window.location.href); });
 }
 
 function deleteNtppCat(id, nom) {
   if(!confirm(`Supprimer la catégorie "${nom}" et ses valeurs ?`)) return;
-  api(`/api/ntpp/categorie/${id}`,'DELETE').then(()=>{toast('Supprimée');setTimeout(()=>window.location.href=window.location.href,300)});
+  api(`/api/ntpp/categorie/${id}`,'DELETE').then(()=>{toast('Supprimée');window.location.assign(window.location.href)});
 }
 
 function saveNtppVal(catId, val, annee) {
@@ -493,7 +493,7 @@ function doNouvelleAnnee() {
   const source = document.getElementById('na-src').value;
   const dup = document.getElementById('na-dup').checked;
   api('/api/annee/nouvelle','POST',{label,source,dupliquer:dup})
-    .then(r=>{ if(!r.ok) return toast('Erreur','err'); toast(`Année ${label} créée`); closeModal(); setTimeout(()=>window.location.href=window.location.href,800); });
+    .then(r=>{ if(!r.ok) return toast('Erreur','err'); toast(`Année ${label} créée`); closeModal(); window.location.assign(window.location.href); });
 }
 
 // ── Backup / Restore ──────────────────────────────────────────────────────────
@@ -519,7 +519,7 @@ function doRestore() {
   if(!confirm('Confirmer ? Les données actuelles seront remplacées.')) return;
   const form = new FormData(); form.append('file',file);
   fetch('/api/restore',{method:'POST',body:form}).then(r=>r.json()).then(d=>{
-    if(d.ok){toast('Restauré');closeModal();setTimeout(()=>window.location.href=window.location.href,1500);}
+    if(d.ok){toast('Restauré');closeModal();window.location.assign(window.location.href);}
     else toast(d.error||'Erreur','err');
   });
 }
@@ -532,7 +532,7 @@ function doImportPersonnel(input) {
   fetch('/api/personnel/import',{method:'POST',body:form}).then(r=>r.json()).then(d=>{
     if(d.ok) toast(`${d.added} ajouté(s), ${d.updated} mis à jour`);
     else toast(d.error||'Erreur','err');
-    setTimeout(()=>window.location.href=window.location.href,1000);
+    window.location.assign(window.location.href);
   });
 }
 
@@ -570,15 +570,31 @@ function initTooltips() {
             if (!prof) return;
             fetch('/api/synthese/' + prof.id + '?annee=' + annee)
               .then(r => r.json()).then(d => {
-                const total = d.attributions.reduce((s,a) => s + (a.h||0), 0);
-                const titu  = d.titulariats.map(t => t.filiere + '/' + t.classe).join(', ');
-                const tip   = getOrCreateTooltip();
+                const total    = d.total || d.attributions.reduce((s,a)=>s+(a.h||0),0);
+                const totalNom = d.total_nomme || 0;
+                const ecart    = Math.round((total - totalNom)*10)/10;
+                const titu     = d.titulariats.map(t=>t.filiere+'/'+t.classe).join(', ');
+                const tip      = getOrCreateTooltip();
+                // Cours par filiere
+                const filMap = {};
+                d.attributions.forEach(a => { if(!filMap[a.filiere]) filMap[a.filiere]=[]; filMap[a.filiere].push(a); });
+                const coursHtml = Object.entries(filMap).map(([fil,attrs]) =>
+                  '<div style="margin-top:5px"><div style="font-size:9px;color:#999;margin-bottom:1px">' + fil + '</div>' +
+                  attrs.map(a=>'<div style="display:flex;justify-content:space-between;gap:10px;font-size:10px"><span>' + a.nom + '</span><span style="color:#a8d8a8;flex-shrink:0">' + a.h + 'h</span></div>').join('') +
+                  '</div>').join('');
+                // Nominations
+                const noms = d.nominations || [];
+                const nomHtml = noms.length ?
+                  '<div style="margin-top:6px;padding-top:4px;border-top:1px solid rgba(255,255,255,.15)"><div style="font-size:9px;color:#fac775;margin-bottom:2px">NOMMÉ</div>' +
+                  noms.map(n=>'<div style="display:flex;justify-content:space-between;gap:10px;font-size:10px"><span style="color:#ddd">' + n.matiere + '</span><span style="color:#fac775;flex-shrink:0">' + n.heures + 'h</span></div>').join('') + '</div>' : '';
+                // Ecart
+                const ec = totalNom > 0 ? '<div style="margin-top:4px;padding-top:4px;border-top:1px solid rgba(255,255,255,.1);font-size:10px;display:flex;justify-content:space-between"><span style="color:#aaa">Écart</span><span style="color:' + (ecart===0?'#a8d8a8':ecart>0?'#fac775':'#ff8080') + ';font-weight:600">' + (ecart>0?'+':'') + ecart + 'h</span></div>' : '';
                 tip.innerHTML =
-                  '<div style="font-weight:600;font-size:12px;margin-bottom:4px">' + acro + '</div>' +
-                  (prof.prenom ? '<div style="color:#ccc;font-size:10px">' + prof.prenom + ' ' + prof.nom + '</div>' : '') +
-                  '<div style="margin-top:5px;border-top:1px solid rgba(255,255,255,.2);padding-top:5px">' +
-                  '<span style="color:#a8d8a8">Total : ' + total + 'h</span></div>' +
-                  (titu ? '<div style="color:#fac775;font-size:10px;margin-top:3px">Titulaire : ' + titu + '</div>' : '');
+                  '<div style="font-weight:600;font-size:12px;margin-bottom:2px">' + acro + '</div>' +
+                  (prof.prenom ? '<div style="color:#ccc;font-size:10px;margin-bottom:4px">' + prof.prenom + ' ' + prof.nom + '</div>' : '') +
+                  '<div style="border-top:1px solid rgba(255,255,255,.2);padding-top:4px;display:flex;justify-content:space-between"><span style="color:#aaa;font-size:10px">Total</span><span style="color:#a8d8a8;font-weight:600">' + total + 'h</span></div>' +
+                  (titu ? '<div style="color:#fac775;font-size:10px;margin-top:2px">🏷 ' + titu + '</div>' : '') +
+                  coursHtml + nomHtml + ec;
                 const rect = pill.getBoundingClientRect();
                 tip.style.left    = Math.min(rect.left, window.innerWidth - 270) + 'px';
                 tip.style.top     = (rect.bottom + 6) + 'px';
@@ -677,6 +693,22 @@ function doEditCommentaireClasse(id, val) {
     .then(r => {
       if(!r.ok) return toast('Erreur','err');
       closeModal(); toast('Commentaire mis à jour');
-      setTimeout(()=>window.location.href=window.location.href, 300);
+      window.location.assign(window.location.href);
+    });
+}
+
+// ── Import nominations Proecco ─────────────────────────────────────────────────
+function doImportNominations(input) {
+  const form = new FormData();
+  form.append('file', input.files[0]);
+  toast('Import en cours…');
+  fetch('/api/nominations/import', {method:'POST', body:form})
+    .then(r => r.json()).then(d => {
+      if (d.ok) {
+        toast(`${d.added} ajoutée(s), ${d.updated} mise(s) à jour, ${d.skipped} ignorée(s)`);
+        window.location.assign(window.location.href);
+      } else {
+        toast(d.error || 'Erreur', 'err');
+      }
     });
 }

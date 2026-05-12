@@ -7,6 +7,11 @@
     Supprimer (<span id="sel-nb">0</span>)
   </button>
   <button class="btn btn-success" onclick="importPersonnel()">📥 Importer Excel/CSV</button>
+  <label class="btn" style="cursor:pointer" title="Importer les nominations Proecco">
+    📋 Importer nominations
+    <input type="file" accept=".xlsx,.xls" style="display:none"
+           onchange="doImportNominations(this)">
+  </label>
   <input type="file" id="import-f" accept=".xlsx,.xls,.csv" style="display:none" onchange="doImportPersonnel(this)">
   <button class="btn btn-primary" onclick="addPersonnelModal()">+ Ajouter</button>
 </div>
@@ -37,7 +42,7 @@
       <td>
         <input type="checkbox" class="pcheck" data-id="{{ p.id }}" onchange="updateSelection()">
       </td>
-      <td><strong>{{ p.acronyme }}</strong></td>
+      <td><a href="/prof/{{ p.id }}?annee={{ annee }}" style="font-weight:600;color:var(--blue-dark);text-decoration:none">{{ p.acronyme }}</a></td>
       <td><input value="{{ p.prenom or '' }}" placeholder="—" style="width:120px"
                  onblur="savePersonnel({{ p.id }},'prenom',this.value)"></td>
       <td><input value="{{ p.nom or '' }}" placeholder="—" style="width:140px"
