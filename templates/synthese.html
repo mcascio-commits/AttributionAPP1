@@ -27,7 +27,7 @@
     {% if p.total > 0 or p.heures_min > 0 %}
     {% set alerte = p.heures_min > 0 and p.total < p.heures_min %}
     <tr style="{% if alerte %}background:var(--red-pale){% endif %}">
-      <td><strong {% if alerte %}style="color:var(--red)"{% endif %}>{{ p.acronyme }}</strong></td>
+      <td><a href="/prof/{{ p.id }}?annee={{ annee }}" style="font-weight:600;color:{% if alerte %}var(--red){% else %}var(--blue-dark){% endif %};text-decoration:none">{{ p.acronyme }}</a></td>
       <td>{{ p.nom or '—' }}</td>
       <td>{{ p.prenom or '—' }}</td>
       <td class="r"><strong {% if alerte %}style="color:var(--red)"{% endif %}>{{ p.total|int }}h</strong></td>

@@ -122,7 +122,7 @@ function addProfModal(coursId, groupeNum, classeId, annee, heuresCours, onSucces
     }).then(r => {
       if (!r.ok) return toast(r.error||'Erreur','err');
       closeModal(); toast('Ajouté');
-      if (onSuccess) onSuccess(); else setTimeout(()=>window.location.href=window.location.href,300);
+      if (onSuccess) onSuccess(); else setTimeout(()=>location.reload(),400);
     });
   };
 }
@@ -146,17 +146,17 @@ function addTitulaireModal(classeId, classeNom, annee) {
     const acro = inp.value.trim().toUpperCase();
     if (!acro) return toast('Acronyme requis','err');
     api('/api/titulaire','POST',{classe_id:classeId, acronyme:acro, annee})
-      .then(r => { if(!r.ok) return toast('Erreur','err'); closeModal(); toast('Titulaire ajouté'); setTimeout(()=>window.location.href=window.location.href,300); });
+      .then(r => { if(!r.ok) return toast('Erreur','err'); closeModal(); toast('Titulaire ajouté'); setTimeout(()=>location.reload(),400); });
   };
 }
 
 function deleteTitulaire(id) {
-  api(`/api/titulaire/${id}`,'DELETE').then(()=>{toast('Supprimé');setTimeout(()=>window.location.href=window.location.href,300)});
+  api(`/api/titulaire/${id}`,'DELETE').then(()=>{toast('Supprimé');setTimeout(()=>location.reload(),400)});
 }
 
 // ── Attribution ───────────────────────────────────────────────────────────────
 function deleteAttr(id) {
-  api(`/api/attribution/${id}`,'DELETE').then(()=>{toast('Supprimé');setTimeout(()=>window.location.href=window.location.href,300)});
+  api(`/api/attribution/${id}`,'DELETE').then(()=>{toast('Supprimé');setTimeout(()=>location.reload(),400)});
 }
 
 function editAttr(id, acro, heuresAttr, heuresCours, currentColor) {
@@ -204,7 +204,7 @@ function doEditAttr(id) {
   const h     = document.getElementById('ea-h').value;
   const color = document.getElementById('ea-color')?.value || '';
   api(`/api/attribution/${id}`,'PUT',{acronyme:acro, heures_attr: h ? parseFloat(h) : null, couleur: color})
-    .then(r => { if(!r.ok) return toast('Erreur','err'); closeModal(); toast('Mis à jour'); setTimeout(()=>window.location.href=window.location.href,300); });
+    .then(r => { if(!r.ok) return toast('Erreur','err'); closeModal(); toast('Mis à jour'); setTimeout(()=>location.reload(),400); });
 }
 
 // ── Cours management ──────────────────────────────────────────────────────────
@@ -219,7 +219,7 @@ function editCours(id, nom, heures, type) {
       <select id="ec-type">${['FC','OPT','TT','EDPH','COORD','AC'].map(t=>`<option ${t===type?'selected':''}>${t}</option>`).join('')}</select></div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal()">Annuler</button>
-      <button class="btn btn-danger btn-sm" onclick="if(confirm('Supprimer ce cours ?'))api('/api/cours/${id}','DELETE').then(()=>{closeModal();toast('Supprimé');setTimeout(()=>window.location.href=window.location.href,300)})">Supprimer</button>
+      <button class="btn btn-danger btn-sm" onclick="if(confirm('Supprimer ce cours ?'))api('/api/cours/${id}','DELETE').then(()=>{closeModal();toast('Supprimé');setTimeout(()=>location.reload(),400)})">Supprimer</button>
       <button class="btn btn-primary" onclick="doEditCours(${id})">Enregistrer</button>
     </div>`);
   setTimeout(()=>document.getElementById('ec-nom').focus(),80);
@@ -230,7 +230,7 @@ function doEditCours(id) {
     nom: document.getElementById('ec-nom').value.trim(),
     heures: parseFloat(document.getElementById('ec-h').value)||0,
     type: document.getElementById('ec-type').value,
-  }).then(r=>{ if(!r.ok) return toast('Erreur','err'); closeModal(); toast('Mis à jour'); setTimeout(()=>window.location.href=window.location.href,300); });
+  }).then(r=>{ if(!r.ok) return toast('Erreur','err'); closeModal(); toast('Mis à jour'); setTimeout(()=>location.reload(),400); });
 }
 
 function addCours(filiereId) {
@@ -254,7 +254,7 @@ function doAddCours(filiereId) {
     filiere_id:filiereId, nom,
     heures: parseFloat(document.getElementById('ac-h').value)||0,
     type: document.getElementById('ac-type').value,
-  }).then(r=>{ if(!r.ok) return toast('Erreur','err'); closeModal(); toast('Cours ajouté'); setTimeout(()=>window.location.href=window.location.href,300); });
+  }).then(r=>{ if(!r.ok) return toast('Erreur','err'); closeModal(); toast('Cours ajouté'); setTimeout(()=>location.reload(),400); });
 }
 
 // ── Classes management ────────────────────────────────────────────────────────
@@ -329,7 +329,7 @@ function doSetGroupes(coursId) {
   const nb = Math.max(1, parseInt(document.getElementById('sg-nb').value)||1);
   api(`/api/cours/${coursId}`,'PUT',{nb_groupes:nb}).then(r=>{
     if(!r.ok) return toast('Erreur','err');
-    toast(`${nb} groupe(s) configuré(s)`); closeModal(); setTimeout(()=>window.location.href=window.location.href,300);
+    toast(`${nb} groupe(s) configuré(s)`); closeModal(); setTimeout(()=>location.reload(),400);
   });
 }
 
@@ -363,7 +363,7 @@ function doAddNtppCat(signe, parentId) {
   const s = document.getElementById('nc-s') ? parseInt(document.getElementById('nc-s').value) : signe;
   if(!nom) return toast('Nom requis','err');
   api('/api/ntpp/categorie','POST',{nom,signe:s,parent_id:parentId})
-    .then(r=>{ if(!r.ok) return toast('Erreur','err'); closeModal(); toast('Catégorie ajoutée'); setTimeout(()=>window.location.href=window.location.href,300); });
+    .then(r=>{ if(!r.ok) return toast('Erreur','err'); closeModal(); toast('Catégorie ajoutée'); setTimeout(()=>location.reload(),400); });
 }
 
 function editNtppCat(id, nom, signe) {
@@ -384,12 +384,12 @@ function doEditNtppCat(id) {
   api(`/api/ntpp/categorie/${id}`,'PUT',{
     nom: document.getElementById('en-n').value.trim(),
     signe: parseInt(document.getElementById('en-s').value),
-  }).then(r=>{ if(!r.ok) return toast('Erreur','err'); closeModal(); toast('Mis à jour'); setTimeout(()=>window.location.href=window.location.href,300); });
+  }).then(r=>{ if(!r.ok) return toast('Erreur','err'); closeModal(); toast('Mis à jour'); setTimeout(()=>location.reload(),400); });
 }
 
 function deleteNtppCat(id, nom) {
   if(!confirm(`Supprimer la catégorie "${nom}" et ses valeurs ?`)) return;
-  api(`/api/ntpp/categorie/${id}`,'DELETE').then(()=>{toast('Supprimée');setTimeout(()=>window.location.href=window.location.href,300)});
+  api(`/api/ntpp/categorie/${id}`,'DELETE').then(()=>{toast('Supprimée');setTimeout(()=>location.reload(),400)});
 }
 
 function saveNtppVal(catId, val, annee) {
@@ -493,7 +493,7 @@ function doNouvelleAnnee() {
   const source = document.getElementById('na-src').value;
   const dup = document.getElementById('na-dup').checked;
   api('/api/annee/nouvelle','POST',{label,source,dupliquer:dup})
-    .then(r=>{ if(!r.ok) return toast('Erreur','err'); toast(`Année ${label} créée`); closeModal(); setTimeout(()=>window.location.href=window.location.href,800); });
+    .then(r=>{ if(!r.ok) return toast('Erreur','err'); toast(`Année ${label} créée`); closeModal(); setTimeout(()=>location.reload(),400); });
 }
 
 // ── Backup / Restore ──────────────────────────────────────────────────────────
@@ -519,7 +519,7 @@ function doRestore() {
   if(!confirm('Confirmer ? Les données actuelles seront remplacées.')) return;
   const form = new FormData(); form.append('file',file);
   fetch('/api/restore',{method:'POST',body:form}).then(r=>r.json()).then(d=>{
-    if(d.ok){toast('Restauré');closeModal();setTimeout(()=>window.location.href=window.location.href,1500);}
+    if(d.ok){toast('Restauré');closeModal();setTimeout(()=>location.reload(),400);}
     else toast(d.error||'Erreur','err');
   });
 }
@@ -532,7 +532,7 @@ function doImportPersonnel(input) {
   fetch('/api/personnel/import',{method:'POST',body:form}).then(r=>r.json()).then(d=>{
     if(d.ok) toast(`${d.added} ajouté(s), ${d.updated} mis à jour`);
     else toast(d.error||'Erreur','err');
-    setTimeout(()=>window.location.href=window.location.href,1000);
+    setTimeout(()=>location.reload(),400);
   });
 }
 
@@ -678,5 +678,21 @@ function doEditCommentaireClasse(id, val) {
       if(!r.ok) return toast('Erreur','err');
       closeModal(); toast('Commentaire mis à jour');
       setTimeout(()=>window.location.href=window.location.href, 300);
+    });
+}
+
+// ── Import nominations Proecco ─────────────────────────────────────────────────
+function doImportNominations(input) {
+  const form = new FormData();
+  form.append('file', input.files[0]);
+  toast('Import en cours…');
+  fetch('/api/nominations/import', {method:'POST', body:form})
+    .then(r => r.json()).then(d => {
+      if (d.ok) {
+        toast(`${d.added} ajoutée(s), ${d.updated} mise(s) à jour, ${d.skipped} ignorée(s)`);
+        setTimeout(() => location.reload(), 1500);
+      } else {
+        toast(d.error || 'Erreur', 'err');
+      }
     });
 }
