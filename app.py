@@ -1148,10 +1148,26 @@ def export_excel():
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 # ── Initialisation au démarrage ───────────────────────────────────────────────
-# Appelé par gunicorn ET python app.py
-import atexit as _atexit
+# Utilise un fichier lock pour n'initialiser qu'une seule fois
+import threading
+_init_lock = threading.Lock()
+_initialized = False
 
-# DB initialized by gunicorn.conf.py on_starting hook
+def _startup():
+    global _initialized
+    with _init_lock:
+        if _initialized:
+            return
+        _initialized = True
+        try:
+            os.makedirs('data', exist_ok=True)
+            init_db()
+            seed()
+            print('Base de données prête.')
+        except Exception as e:
+            print(f'Erreur init DB: {e}')
+
+_startup()
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 if __name__ == '__main__':
