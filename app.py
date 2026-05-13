@@ -8,7 +8,7 @@ from flask import (Flask, render_template, request, jsonify, redirect,
 from flask_login import (LoginManager, UserMixin, login_user, logout_user,
                          login_required, current_user)
 from werkzeug.security import generate_password_hash, check_password_hash
-from database import get_db, fetchall, fetchone, execute, lastid, init_db, seed
+from database import get_db, fetchall, fetchone, execute, lastid, insert_returning, init_db, seed
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-key-change-in-production-xyz987')
@@ -605,11 +605,11 @@ def add_attribution():
         pid = lastid(conn, 'personnel')
     else: pid = p['id']
     try:
-        execute(conn, """INSERT INTO attributions(cours_id,classe_id,personnel_id,annee,groupe_num,heures_attr)
-                         VALUES(?,?,?,?,?,?)""",
-                (d['cours_id'], d.get('classe_id'), pid,
-                 d.get('annee', annee_active()), d.get('groupe_num',1), d.get('heures_attr')))
-        conn.commit(); aid = lastid(conn, 'attributions')
+        aid = insert_returning(conn,
+            "INSERT INTO attributions(cours_id,classe_id,personnel_id,annee,groupe_num,heures_attr) VALUES(?,?,?,?,?,?)",
+            (d['cours_id'], d.get('classe_id'), pid,
+             d.get('annee', annee_active()), d.get('groupe_num',1), d.get('heures_attr')))
+        conn.commit()
         conn.close(); return jsonify({'ok':True,'id':aid})
     except Exception as e:
         conn.close(); return jsonify({'ok':False,'error':str(e)})
@@ -1061,8 +1061,14 @@ def send_mail():
             msg['From']    = f"{cfg.get('from_name','')} <{cfg['smtp_user']}>"
             msg['To']      = data['email']
             msg.attach(MIMEText(data['corps'],'plain','utf-8'))
-            with smtplib.SMTP_SSL(cfg['smtp_host'], int(cfg['smtp_port'])) as s:
-                s.login(cfg['smtp_user'], cfg['smtp_pass']); s.send_message(msg)
+            port = int(cfg['smtp_port'])
+            if port == 587:
+                with smtplib.SMTP(cfg['smtp_host'], port) as s:
+                    s.ehlo(); s.starttls(); s.ehlo()
+                    s.login(cfg['smtp_user'], cfg['smtp_pass']); s.send_message(msg)
+            else:
+                with smtplib.SMTP_SSL(cfg['smtp_host'], port) as s:
+                    s.login(cfg['smtp_user'], cfg['smtp_pass']); s.send_message(msg)
             conn2 = get_db()
             execute(conn2, "INSERT INTO mail_envois(personnel_id,template_id,annee,date_envoi,statut) VALUES(?,?,?,?,?)",
                     (pid,tid,annee,datetime.now().isoformat(),'sent'))
@@ -1148,10 +1154,13 @@ def export_excel():
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 # ── Initialisation au démarrage ───────────────────────────────────────────────
-# Appelé par gunicorn ET python app.py
-import atexit as _atexit
-
-# DB initialized by gunicorn.conf.py on_starting hook
+try:
+    os.makedirs('data', exist_ok=True)
+    init_db()
+    seed()
+    print('Base de données prête.')
+except Exception as e:
+    print(f'Erreur init DB: {e}')
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 if __name__ == '__main__':
