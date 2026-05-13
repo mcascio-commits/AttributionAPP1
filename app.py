@@ -1042,6 +1042,7 @@ def mail_preview(pid):
     corps = corps.replace('{titulariats}', titu_txt).replace('{tableau}', '\n'.join(lines))
     return jsonify({'ok':True,'sujet':t['sujet'].replace('{annee}',annee),'corps':corps,'email':p.get('email','')})
 
+
 @app.route('/api/mail/send', methods=['POST'])
 @login_required
 @admin_required
@@ -1049,8 +1050,15 @@ def send_mail():
     d = request.json; pids = d.get('personnel_ids',[]); tid = d.get('template_id',1)
     annee = d.get('annee', annee_active())
     conn = get_db(); cfg = fetchone(conn, "SELECT * FROM mail_config LIMIT 1"); conn.close()
-    if not cfg or not cfg.get('smtp_user') or not cfg.get('smtp_pass'):
-        return jsonify({'ok':False,'error':'Configuration SMTP incomplète'})
+
+    # Check SendGrid API key
+    sg_key = os.environ.get('SENDGRID_API_KEY','')
+    use_sendgrid = bool(sg_key)
+
+    if not use_sendgrid:
+        if not cfg or not cfg.get('smtp_user') or not cfg.get('smtp_pass'):
+            return jsonify({'ok':False,'error':'Configuration SMTP ou SENDGRID_API_KEY manquant'})
+
     results = []
     for pid in pids:
         prev = mail_preview(pid)
@@ -1058,25 +1066,52 @@ def send_mail():
         if not data.get('ok') or not data.get('email'):
             results.append({'id':pid,'ok':False,'error':'Email manquant'}); continue
         try:
-            msg = MIMEMultipart('alternative')
-            msg['Subject'] = data['sujet']
-            msg['From']    = f"{cfg.get('from_name','')} <{cfg['smtp_user']}>"
-            msg['To']      = data['email']
-            msg.attach(MIMEText(data['corps'],'plain','utf-8'))
-            port = int(cfg['smtp_port'])
-            if port == 587:
-                with smtplib.SMTP(cfg['smtp_host'], port) as s:
-                    s.ehlo(); s.starttls(); s.ehlo()
-                    s.login(cfg['smtp_user'], cfg['smtp_pass']); s.send_message(msg)
+            if use_sendgrid:
+                import urllib.request
+                from_email = cfg.get('smtp_user','') if cfg else ''
+                from_name  = cfg.get('from_name','') if cfg else ''
+                payload = json.dumps({
+                    'personalizations': [{'to': [{'email': data['email']}]}],
+                    'from': {'email': from_email, 'name': from_name},
+                    'subject': data['sujet'],
+                    'content': [{'type': 'text/plain', 'value': data['corps']}]
+                }).encode('utf-8')
+                req = urllib.request.Request(
+                    'https://api.sendgrid.com/v3/mail/send',
+                    data=payload,
+                    headers={
+                        'Authorization': f'Bearer {sg_key}',
+                        'Content-Type': 'application/json'
+                    },
+                    method='POST'
+                )
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    if resp.status not in (200, 201, 202):
+                        raise Exception(f'SendGrid error {resp.status}')
             else:
-                with smtplib.SMTP_SSL(cfg['smtp_host'], port) as s:
-                    s.login(cfg['smtp_user'], cfg['smtp_pass']); s.send_message(msg)
+                from email.mime.text import MIMEText
+                from email.mime.multipart import MIMEMultipart
+                msg = MIMEMultipart('alternative')
+                msg['Subject'] = data['sujet']
+                msg['From']    = f"{cfg.get('from_name','')} <{cfg['smtp_user']}>"
+                msg['To']      = data['email']
+                msg.attach(MIMEText(data['corps'],'plain','utf-8'))
+                port = int(cfg['smtp_port'])
+                if port == 587:
+                    with smtplib.SMTP(cfg['smtp_host'], port) as s:
+                        s.ehlo(); s.starttls(); s.ehlo()
+                        s.login(cfg['smtp_user'], cfg['smtp_pass']); s.send_message(msg)
+                else:
+                    with smtplib.SMTP_SSL(cfg['smtp_host'], port) as s:
+                        s.login(cfg['smtp_user'], cfg['smtp_pass']); s.send_message(msg)
+
             conn2 = get_db()
             execute(conn2, "INSERT INTO mail_envois(personnel_id,template_id,annee,date_envoi,statut) VALUES(?,?,?,?,?)",
                     (pid,tid,annee,datetime.now().isoformat(),'sent'))
             conn2.commit(); conn2.close()
             results.append({'id':pid,'ok':True})
         except Exception as e:
+            print(f'Mail error pid={pid}: {e}')
             conn2 = get_db()
             execute(conn2, "INSERT INTO mail_envois(personnel_id,template_id,annee,date_envoi,statut,erreur) VALUES(?,?,?,?,?,?)",
                     (pid,tid,annee,datetime.now().isoformat(),'error',str(e)))
@@ -1084,7 +1119,6 @@ def send_mail():
             results.append({'id':pid,'ok':False,'error':str(e)})
     return jsonify({'ok':True,'results':results})
 
-# ── Backup ────────────────────────────────────────────────────────────────────
 @app.route('/api/backup')
 @login_required
 @admin_required
@@ -1122,6 +1156,57 @@ def synthese_detail(pid):
     total_nomme = sum(n['heures'] for n in nominations)
     return jsonify({'attributions':detail,'titulariats':titu,'nominations':nominations,
                     'total':total,'total_nomme':total_nomme})
+
+
+@app.route('/export/mails-texte')
+@login_required
+def export_mails_texte():
+    annee = request.args.get('annee', annee_active())
+    conn  = get_db()
+    profs = fetchall(conn,
+        "SELECT DISTINCT p.id, p.acronyme, p.prenom, p.nom, p.email "
+        "FROM personnel p JOIN attributions a ON a.personnel_id=p.id "
+        "JOIN cours c ON a.cours_id=c.id "
+        "WHERE a.annee=? AND p.actif=1 ORDER BY p.nom, p.prenom", (annee,))
+    lines = [f"ATTRIBUTIONS {annee}", f"Généré le {datetime.now().strftime('%d/%m/%Y')}", "="*60, ""]
+    for prof in profs:
+        attrs = fetchall(conn,
+            "SELECT f.nom as filiere, COALESCE(cl.nom,f.nom) as classe, c.nom, c.type, "
+            "CASE WHEN a.heures_attr IS NOT NULL THEN a.heures_attr ELSE c.heures END as h "
+            "FROM attributions a JOIN cours c ON a.cours_id=c.id "
+            "JOIN filieres f ON c.filiere_id=f.id LEFT JOIN classes cl ON a.classe_id=cl.id "
+            "WHERE a.personnel_id=? AND a.annee=? ORDER BY f.ordre, c.type, c.ordre",
+            (prof['id'], annee))
+        titu = fetchall(conn,
+            "SELECT f.nom as filiere, cl.nom as classe "
+            "FROM titulaires t JOIN classes cl ON t.classe_id=cl.id "
+            "JOIN filieres f ON cl.filiere_id=f.id "
+            "WHERE t.personnel_id=? AND t.annee=?", (prof['id'], annee))
+        total = sum(a['h'] for a in attrs)
+        nom_complet = f"{prof['prenom'] or ''} {prof['nom'] or ''}".strip() or prof['acronyme']
+        lines += ["="*60, f"{prof['acronyme']} — {nom_complet}"]
+        if prof['email']:
+            lines.append(f"Email : {prof['email']}")
+        lines.append("-"*60)
+        if titu:
+            lines.append("Titulariats :")
+            for t in titu:
+                lines.append(f"  - {t['filiere']} / {t['classe']}")
+            lines.append("")
+        lines.append(f"Attributions {annee} :")
+        current_fil = None
+        for a in attrs:
+            if a['filiere'] != current_fil:
+                current_fil = a['filiere']
+                lines.append(f"  [{a['filiere']}]")
+            lines.append(f"    - {a['nom']} ({a['h']:.0f}h) — {a['classe']} [{a['type']}]")
+        lines += ["", f"TOTAL : {total:.0f}h", ""]
+    conn.close()
+    from io import BytesIO
+    buf = BytesIO("\n".join(lines).encode('utf-8'))
+    buf.seek(0)
+    return send_file(buf, download_name=f'attributions_{annee}.txt',
+                     as_attachment=True, mimetype='text/plain')
 
 # ── Export Excel ──────────────────────────────────────────────────────────────
 @app.route('/export/excel')

@@ -1,7 +1,10 @@
 {% extends 'base.html' %}
 {% block title %}Envoi mails{% endblock %}
 {% block content %}
-<div class="topbar"><div class="topbar-title">Envoi des attributions par mail</div></div>
+<div class="topbar">
+  <div class="topbar-title">Envoi des attributions par mail</div>
+  <a href="/export/mails-texte?annee={{ annee }}" class="btn">📄 Exporter fichier texte</a>
+</div>
 <div class="content" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start">
 
 <div>
