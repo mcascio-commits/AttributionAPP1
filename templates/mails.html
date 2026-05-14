@@ -1,7 +1,10 @@
 {% extends 'base.html' %}
 {% block title %}Envoi mails{% endblock %}
 {% block content %}
-<div class="topbar"><div class="topbar-title">Envoi des attributions par mail</div></div>
+<div class="topbar">
+  <div class="topbar-title">Envoi des attributions par mail</div>
+  <a href="/export/mails-texte?annee={{ annee }}" class="btn">📄 Exporter fichier texte</a>
+</div>
 <div class="content" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start">
 
 <div>
@@ -144,7 +147,7 @@ function doSend(annee) {
     .then(r=>{
       const ok=r.results.filter(x=>x.ok).length, err=r.results.filter(x=>!x.ok).length;
       toast(`${ok} envoyé(s)${err?`, ${err} erreur(s)`:''}`, err?'warn':'ok');
-      setTimeout(()=>location.reload(),2000);
+      window.location.assign(window.location.href);
     });
 }
 function newTemplate() {

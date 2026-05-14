@@ -596,9 +596,20 @@ function initTooltips() {
                   (titu ? '<div style="color:#fac775;font-size:10px;margin-top:2px">🏷 ' + titu + '</div>' : '') +
                   coursHtml + nomHtml + ec;
                 const rect = pill.getBoundingClientRect();
-                tip.style.left    = Math.min(rect.left, window.innerWidth - 270) + 'px';
-                tip.style.top     = (rect.bottom + 6) + 'px';
+                // Position intelligente : au-dessus si pas assez de place en bas
                 tip.style.display = 'block';
+                const tipH = tip.offsetHeight || 200;
+                const spaceBelow = window.innerHeight - rect.bottom;
+                const spaceAbove = rect.top;
+                if (spaceBelow < tipH + 10 && spaceAbove > tipH + 10) {
+                  tip.style.top = (rect.top + window.scrollY - tipH - 6) + 'px';
+                } else {
+                  tip.style.top = (rect.bottom + window.scrollY + 6) + 'px';
+                }
+                tip.style.left = Math.min(
+                  Math.max(4, rect.left + window.scrollX),
+                  window.innerWidth - 330
+                ) + 'px';
               });
           });
       }, 500);

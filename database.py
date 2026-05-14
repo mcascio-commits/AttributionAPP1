@@ -69,11 +69,33 @@ def fetchone(conn, sql, params=None):
 def lastid(conn, table=None):
     """Retourne le dernier ID inséré"""
     if USE_POSTGRES:
-        cur = conn.cursor()
-        cur.execute("SELECT lastval()")
-        return cur.fetchone()[0]
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT lastval()")
+            return cur.fetchone()[0]
+        except Exception:
+            if table:
+                cur = conn.cursor()
+                cur.execute(f"SELECT MAX(id) FROM {table}")
+                return cur.fetchone()[0]
+            return None
     else:
         return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+def insert_returning(conn, sql, params):
+    """INSERT with RETURNING id for PostgreSQL, lastrowid for SQLite"""
+    if USE_POSTGRES:
+        import psycopg2
+        sql_pg = sql.replace("?", "%s")
+        if "RETURNING id" not in sql_pg:
+            sql_pg += " RETURNING id"
+        cur = conn.cursor(cursor_factory=psycopg2.extensions.cursor)
+        cur.execute(sql_pg, params)
+        row = cur.fetchone()
+        return row[0] if row else None
+    else:
+        cur = conn.execute(sql, params)
+        return cur.lastrowid
 
 # ── Schéma ────────────────────────────────────────────────────────────────────
 SCHEMA = """
@@ -250,7 +272,11 @@ def init_db():
 def seed():
     """Insère les données initiales si la table est vide"""
     conn = get_db()
-    nb = fetchone(conn, "SELECT COUNT(*) as n FROM filieres")['n']
+    try:
+        nb = fetchone(conn, "SELECT COUNT(*) as n FROM filieres")['n']
+    except Exception:
+        conn.close()
+        return
     if nb > 0:
         conn.close()
         return
