@@ -18,14 +18,14 @@
   <table class="tbl">
     <thead>
       <tr><th>Acronyme</th><th>Nom</th><th>Prénom</th>
-          <th class="r">Attribué</th><th class="r">Nommé</th><th class="r">Écart</th><th class="r">Min</th><th class="r">Max</th>
+          <th class="r">Attribué</th><th class="r">H. définitives</th><th class="r">Écart déf.</th><th class="r">H. demandées</th><th class="r">Écart dem.</th>
           <th>Statut</th><th>Titulariats</th><th></th>
       </tr>
     </thead>
     <tbody>
     {% for p in data %}
     {% if p.total > 0 or p.heures_min > 0 %}
-    {% set alerte = p.heures_min > 0 and p.total < p.heures_min %}
+    {% set alerte = p.heures_max > 0 and p.total < p.heures_max %}
     <tr style="{% if alerte %}background:var(--red-pale){% endif %}">
       <td><a href="/prof/{{ p.id }}?annee={{ annee }}" style="font-weight:600;color:{% if alerte %}var(--red){% else %}var(--blue-dark){% endif %};text-decoration:none">{{ p.acronyme }}</a></td>
       <td>{{ p.nom or '—' }}</td>

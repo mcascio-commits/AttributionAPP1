@@ -8,7 +8,7 @@ from flask import (Flask, render_template, request, jsonify, redirect,
 from flask_login import (LoginManager, UserMixin, login_user, logout_user,
                          login_required, current_user)
 from werkzeug.security import generate_password_hash, check_password_hash
-from database import get_db, fetchall, fetchone, execute, lastid, init_db, seed
+from database import get_db, fetchall, fetchone, execute, lastid, insert_returning, init_db, seed, USE_POSTGRES
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-key-change-in-production-xyz987')
@@ -293,39 +293,86 @@ def import_nominations():
     import pandas as pd, io as _io
     f = request.files.get('file')
     if not f: return jsonify({'ok':False,'error':'Fichier manquant'})
-    content = f.read()
+    content_file = f.read()
     try:
-        df = pd.read_excel(_io.BytesIO(content), header=None)
+        df = pd.read_excel(_io.BytesIO(content_file), header=None)
     except Exception as e:
         return jsonify({'ok':False,'error':str(e)})
-    # Parse totals
+    # Colonnes: 0=Abréviation, 1=Fonction, 2=HrD, 3=Sit, 4=Titre, 5=AncServ
+    # Sit: D/P/T = nommé, S/V/I/B/A/Z = temporaire/suppléant
+    NOMME_SIT = {'D','P','T'}
     data = []
     current_acro = None
+    current_sit = None
     for _, row in df.iterrows():
         acro = str(row.iloc[0]).strip()
-        fonction = str(row.iloc[1]).strip()
+        fonction = str(row.iloc[1]).strip() if pd.notna(row.iloc[1]) else ''
         heures = row.iloc[2]
+        sit = str(row.iloc[3]).strip() if pd.notna(row.iloc[3]) else ''
+        # New prof
         if acro and acro not in ('nan','Abréviation'):
             current_acro = acro
+        # Save sit from detail rows
+        if sit and sit not in ('nan','Sit'):
+            current_sit = sit
+        # Total row
         if 'Total' in fonction and current_acro and str(heures) not in ('nan',''):
             nom_fonction = fonction.replace('Total ','').strip()
             h = float(heures)
             if h > 0:
-                data.append({'acronyme': current_acro, 'fonction': nom_fonction, 'heures': h})
+                est_nomme = current_sit in NOMME_SIT if current_sit else False
+                data.append({'acronyme': current_acro, 'fonction': nom_fonction,
+                             'heures': h, 'sit': current_sit or '', 'nomme': est_nomme})
+            current_sit = None
+        # Ligne sans fonction (détachement) - acro présent, fonction NaN, heures > 0
+        elif acro and acro not in ('nan','Abréviation') and not fonction and str(heures) not in ('nan','') and heures:
+            try:
+                h = float(heures)
+                if h > 0:
+                    est_nomme = sit in NOMME_SIT if sit else False
+                    data.append({'acronyme': acro, 'fonction': 'Détachement/Autre',
+                                 'heures': h, 'sit': sit, 'nomme': est_nomme})
+            except:
+                pass
+    # Check if nominations table has sit/nomme columns, add if missing
     conn = get_db()
+    try:
+        if USE_POSTGRES:
+            conn.cursor().execute('ALTER TABLE nominations ADD COLUMN IF NOT EXISTS sit TEXT DEFAULT NULL')
+            conn.cursor().execute('ALTER TABLE nominations ADD COLUMN IF NOT EXISTS nomme INTEGER DEFAULT 0')
+        else:
+            conn.execute('ALTER TABLE nominations ADD COLUMN sit TEXT DEFAULT NULL')
+            conn.execute('ALTER TABLE nominations ADD COLUMN nomme INTEGER DEFAULT 0')
+        conn.commit() if not USE_POSTGRES else None
+    except Exception:
+        pass
     added = updated = skipped = 0
+    # Track total heures définitives per prof for auto-fill
+    h_definitives = {}
+    for d in data:
+        if d['nomme']:
+            h_definitives[d['acronyme']] = h_definitives.get(d['acronyme'], 0) + d['heures']
+
     for d in data:
         p = fetchone(conn, "SELECT id FROM personnel WHERE acronyme=?", (d['acronyme'],))
         if not p: skipped += 1; continue
         existing = fetchone(conn, "SELECT id FROM nominations WHERE personnel_id=? AND matiere=?",
                            (p['id'], d['fonction']))
         if existing:
-            execute(conn, "UPDATE nominations SET heures=? WHERE id=?", (d['heures'], existing['id']))
+            execute(conn, "UPDATE nominations SET heures=?,sit=?,nomme=? WHERE id=?",
+                   (d['heures'], d['sit'], 1 if d['nomme'] else 0, existing['id']))
             updated += 1
         else:
-            execute(conn, "INSERT INTO nominations(personnel_id,matiere,heures) VALUES(?,?,?)",
-                   (p['id'], d['fonction'], d['heures']))
+            execute(conn, "INSERT INTO nominations(personnel_id,matiere,heures,sit,nomme) VALUES(?,?,?,?,?)",
+                   (p['id'], d['fonction'], d['heures'], d['sit'], 1 if d['nomme'] else 0))
             added += 1
+
+    # Auto-fill heures_min (définitives) for each prof
+    for acro, h_def in h_definitives.items():
+        p = fetchone(conn, "SELECT id FROM personnel WHERE acronyme=?", (acro,))
+        if p:
+            execute(conn, "UPDATE personnel SET heures_min=? WHERE id=?", (h_def, p['id']))
+
     conn.commit(); conn.close()
     return jsonify({'ok':True,'added':added,'updated':updated,'skipped':skipped})
 
@@ -404,7 +451,10 @@ def utilisateurs():
 @login_required
 def get_nominations(pid):
     conn = get_db()
-    noms = fetchall(conn, "SELECT * FROM nominations WHERE personnel_id=? ORDER BY matiere", (pid,))
+    try:
+        noms = fetchall(conn, "SELECT * FROM nominations WHERE personnel_id=? ORDER BY nomme DESC, matiere", (pid,))
+    except Exception:
+        noms = fetchall(conn, "SELECT * FROM nominations WHERE personnel_id=? ORDER BY matiere", (pid,))
     conn.close()
     return jsonify(noms)
 
@@ -413,10 +463,9 @@ def get_nominations(pid):
 @admin_required
 def add_nomination():
     d = request.json; conn = get_db()
-    execute(conn, "INSERT INTO nominations(personnel_id,matiere,heures,type_cours) VALUES(?,?,?,?)",
+    nid = insert_returning(conn, "INSERT INTO nominations(personnel_id,matiere,heures,type_cours) VALUES(?,?,?,?)",
             (d['personnel_id'], d['matiere'], d.get('heures',0), d.get('type_cours','FC')))
     conn.commit()
-    nid = lastid(conn, 'nominations')
     conn.close()
     return jsonify({'ok':True,'id':nid})
 
@@ -485,7 +534,7 @@ def search_personnel():
         SELECT id, acronyme, prenom, nom FROM personnel
         WHERE actif=1 AND (UPPER(acronyme) LIKE ? OR UPPER(nom) LIKE ? OR UPPER(prenom) LIKE ?)
         ORDER BY acronyme LIMIT 10
-    """, (f'{q}%', f'{q}%', f'{q}%'))
+    """, (f'%{q}%', f'%{q}%', f'%{q}%'))
     conn.close()
     return jsonify(r)
 
@@ -601,18 +650,21 @@ def add_attribution():
     conn = get_db()
     p = fetchone(conn, "SELECT id FROM personnel WHERE acronyme=?", (acro,))
     if not p:
-        execute(conn, "INSERT INTO personnel(acronyme) VALUES(?)", (acro,))
-        pid = lastid(conn, 'personnel')
+        pid = insert_returning(conn, "INSERT INTO personnel(acronyme) VALUES(?)", (acro,))
+        conn.commit()
     else: pid = p['id']
     try:
-        execute(conn, """INSERT INTO attributions(cours_id,classe_id,personnel_id,annee,groupe_num,heures_attr)
-                         VALUES(?,?,?,?,?,?)""",
-                (d['cours_id'], d.get('classe_id'), pid,
-                 d.get('annee', annee_active()), d.get('groupe_num',1), d.get('heures_attr')))
-        conn.commit(); aid = lastid(conn, 'attributions')
+        aid = insert_returning(conn,
+            "INSERT INTO attributions(cours_id,classe_id,personnel_id,annee,groupe_num,heures_attr) VALUES(?,?,?,?,?,?)",
+            (d['cours_id'], d.get('classe_id'), pid,
+             d.get('annee', annee_active()), d.get('groupe_num',1), d.get('heures_attr')))
+        conn.commit()
         conn.close(); return jsonify({'ok':True,'id':aid})
     except Exception as e:
-        conn.close(); return jsonify({'ok':False,'error':str(e)})
+        import traceback
+        print('ERROR add_attribution:', traceback.format_exc())
+        conn.rollback()
+        conn.close(); return jsonify({'ok':False,'error':repr(e)})
 
 @app.route('/api/attribution/<int:aid>', methods=['PUT'])
 @login_required
@@ -623,8 +675,8 @@ def update_attribution(aid):
         acro = d['acronyme'].strip().upper()
         p = fetchone(conn, "SELECT id FROM personnel WHERE acronyme=?", (acro,))
         if not p:
-            execute(conn, "INSERT INTO personnel(acronyme) VALUES(?)", (acro,))
-            pid = lastid(conn, 'personnel')
+            pid = insert_returning(conn, "INSERT INTO personnel(acronyme) VALUES(?)", (acro,))
+            conn.commit()
         else: pid = p['id']
         execute(conn, "UPDATE attributions SET personnel_id=? WHERE id=?", (pid, aid))
     if 'heures_attr' in d:
@@ -679,8 +731,8 @@ def add_titulaire():
     conn = get_db()
     p = fetchone(conn, "SELECT id FROM personnel WHERE acronyme=?", (acro,))
     if not p:
-        execute(conn, "INSERT INTO personnel(acronyme) VALUES(?)", (acro,))
-        pid = lastid(conn, 'personnel')
+        pid = insert_returning(conn, "INSERT INTO personnel(acronyme) VALUES(?)", (acro,))
+        conn.commit()
     else: pid = p['id']
     try:
         execute(conn, "INSERT INTO titulaires(classe_id,personnel_id,annee) VALUES(?,?,?)",
@@ -703,9 +755,9 @@ def del_titulaire(tid):
 @admin_required
 def add_cours():
     d = request.json; conn = get_db()
-    execute(conn, "INSERT INTO cours(filiere_id,nom,heures,type,ordre,nb_groupes) VALUES(?,?,?,?,?,?)",
+    cid = insert_returning(conn, "INSERT INTO cours(filiere_id,nom,heures,type,ordre,nb_groupes) VALUES(?,?,?,?,?,?)",
             (d['filiere_id'],d['nom'],d.get('heures',0),d.get('type','FC'),d.get('ordre',999),d.get('nb_groupes',1)))
-    conn.commit(); cid = lastid(conn,'cours'); conn.close()
+    conn.commit(); conn.close()
     return jsonify({'ok':True,'id':cid})
 
 @app.route('/api/cours/<int:cid>', methods=['PUT'])
@@ -748,9 +800,9 @@ def reorder_cours():
 def add_classe():
     d = request.json; conn = get_db()
     max_ordre = fetchone(conn, "SELECT COALESCE(MAX(ordre)+1,0) as o FROM classes WHERE filiere_id=?", (d['filiere_id'],))['o']
-    execute(conn, "INSERT INTO classes(filiere_id,nom,ordre) VALUES(?,?,?)",
+    cid = insert_returning(conn, "INSERT INTO classes(filiere_id,nom,ordre) VALUES(?,?,?)",
             (d['filiere_id'], d['nom'].strip().upper(), max_ordre))
-    conn.commit(); cid = lastid(conn,'classes'); conn.close()
+    conn.commit(); conn.close()
     return jsonify({'ok':True,'id':cid})
 
 @app.route('/api/classe/<int:cid>', methods=['PUT'])
@@ -809,9 +861,9 @@ def add_ntpp_cat():
     conn = get_db()
     max_o = fetchone(conn, "SELECT COALESCE(MAX(ordre)+1,0) as o FROM ntpp_categories WHERE parent_id IS ?",
                      (d.get('parent_id'),))['o']
-    execute(conn, "INSERT INTO ntpp_categories(nom,signe,ordre,parent_id) VALUES(?,?,?,?)",
+    cid = insert_returning(conn, "INSERT INTO ntpp_categories(nom,signe,ordre,parent_id) VALUES(?,?,?,?)",
             (d['nom'], d.get('signe',1), max_o, d.get('parent_id')))
-    conn.commit(); cid = lastid(conn,'ntpp_categories'); conn.close()
+    conn.commit(); conn.close()
     return jsonify({'ok':True,'id':cid})
 
 @app.route('/api/ntpp/categorie/<int:cid>', methods=['PUT'])
@@ -873,9 +925,9 @@ def get_coord_cats():
 def add_coord_cat():
     d = request.json; conn = get_db()
     max_o = fetchone(conn, "SELECT COALESCE(MAX(ordre)+1,0) as o FROM coord_categories")['o']
-    execute(conn, "INSERT INTO coord_categories(nom,couleur,ordre) VALUES(?,?,?)",
+    cid = insert_returning(conn, "INSERT INTO coord_categories(nom,couleur,ordre) VALUES(?,?,?)",
             (d['nom'], d.get('couleur','#888780'), max_o))
-    conn.commit(); cid = lastid(conn,'coord_categories'); conn.close()
+    conn.commit(); conn.close()
     return jsonify({'ok':True,'id':cid})
 
 @app.route('/api/coord/categorie/<int:cid>', methods=['PUT'])
@@ -907,9 +959,9 @@ def del_coord_cat(cid):
 def add_filiere():
     d = request.json; conn = get_db()
     max_o = fetchone(conn, "SELECT COALESCE(MAX(ordre)+1,0) as o FROM filieres")['o']
-    execute(conn, "INSERT INTO filieres(nom,degre,couleur,ordre) VALUES(?,?,?,?)",
+    fid = insert_returning(conn, "INSERT INTO filieres(nom,degre,couleur,ordre) VALUES(?,?,?,?)",
             (d['nom'], d.get('degre',''), d.get('couleur','#378ADD'), max_o))
-    conn.commit(); fid = lastid(conn,'filieres')
+    conn.commit()
     if d.get('copier_depuis'):
         for c in fetchall(conn, "SELECT * FROM cours WHERE filiere_id=?", (int(d['copier_depuis']),)):
             execute(conn, "INSERT INTO cours(filiere_id,nom,heures,type,ordre,nb_groupes) VALUES(?,?,?,?,?,?)",
@@ -1040,6 +1092,7 @@ def mail_preview(pid):
     corps = corps.replace('{titulariats}', titu_txt).replace('{tableau}', '\n'.join(lines))
     return jsonify({'ok':True,'sujet':t['sujet'].replace('{annee}',annee),'corps':corps,'email':p.get('email','')})
 
+
 @app.route('/api/mail/send', methods=['POST'])
 @login_required
 @admin_required
@@ -1047,8 +1100,15 @@ def send_mail():
     d = request.json; pids = d.get('personnel_ids',[]); tid = d.get('template_id',1)
     annee = d.get('annee', annee_active())
     conn = get_db(); cfg = fetchone(conn, "SELECT * FROM mail_config LIMIT 1"); conn.close()
-    if not cfg or not cfg.get('smtp_user') or not cfg.get('smtp_pass'):
-        return jsonify({'ok':False,'error':'Configuration SMTP incomplète'})
+
+    # Check SendGrid API key
+    sg_key = os.environ.get('SENDGRID_API_KEY','')
+    use_sendgrid = bool(sg_key)
+
+    if not use_sendgrid:
+        if not cfg or not cfg.get('smtp_user') or not cfg.get('smtp_pass'):
+            return jsonify({'ok':False,'error':'Configuration SMTP ou SENDGRID_API_KEY manquant'})
+
     results = []
     for pid in pids:
         prev = mail_preview(pid)
@@ -1056,19 +1116,52 @@ def send_mail():
         if not data.get('ok') or not data.get('email'):
             results.append({'id':pid,'ok':False,'error':'Email manquant'}); continue
         try:
-            msg = MIMEMultipart('alternative')
-            msg['Subject'] = data['sujet']
-            msg['From']    = f"{cfg.get('from_name','')} <{cfg['smtp_user']}>"
-            msg['To']      = data['email']
-            msg.attach(MIMEText(data['corps'],'plain','utf-8'))
-            with smtplib.SMTP_SSL(cfg['smtp_host'], int(cfg['smtp_port'])) as s:
-                s.login(cfg['smtp_user'], cfg['smtp_pass']); s.send_message(msg)
+            if use_sendgrid:
+                import urllib.request
+                from_email = cfg.get('smtp_user','') if cfg else ''
+                from_name  = cfg.get('from_name','') if cfg else ''
+                payload = json.dumps({
+                    'personalizations': [{'to': [{'email': data['email']}]}],
+                    'from': {'email': from_email, 'name': from_name},
+                    'subject': data['sujet'],
+                    'content': [{'type': 'text/plain', 'value': data['corps']}]
+                }).encode('utf-8')
+                req = urllib.request.Request(
+                    'https://api.sendgrid.com/v3/mail/send',
+                    data=payload,
+                    headers={
+                        'Authorization': f'Bearer {sg_key}',
+                        'Content-Type': 'application/json'
+                    },
+                    method='POST'
+                )
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    if resp.status not in (200, 201, 202):
+                        raise Exception(f'SendGrid error {resp.status}')
+            else:
+                from email.mime.text import MIMEText
+                from email.mime.multipart import MIMEMultipart
+                msg = MIMEMultipart('alternative')
+                msg['Subject'] = data['sujet']
+                msg['From']    = f"{cfg.get('from_name','')} <{cfg['smtp_user']}>"
+                msg['To']      = data['email']
+                msg.attach(MIMEText(data['corps'],'plain','utf-8'))
+                port = int(cfg['smtp_port'])
+                if port == 587:
+                    with smtplib.SMTP(cfg['smtp_host'], port) as s:
+                        s.ehlo(); s.starttls(); s.ehlo()
+                        s.login(cfg['smtp_user'], cfg['smtp_pass']); s.send_message(msg)
+                else:
+                    with smtplib.SMTP_SSL(cfg['smtp_host'], port) as s:
+                        s.login(cfg['smtp_user'], cfg['smtp_pass']); s.send_message(msg)
+
             conn2 = get_db()
             execute(conn2, "INSERT INTO mail_envois(personnel_id,template_id,annee,date_envoi,statut) VALUES(?,?,?,?,?)",
                     (pid,tid,annee,datetime.now().isoformat(),'sent'))
             conn2.commit(); conn2.close()
             results.append({'id':pid,'ok':True})
         except Exception as e:
+            print(f'Mail error pid={pid}: {e}')
             conn2 = get_db()
             execute(conn2, "INSERT INTO mail_envois(personnel_id,template_id,annee,date_envoi,statut,erreur) VALUES(?,?,?,?,?,?)",
                     (pid,tid,annee,datetime.now().isoformat(),'error',str(e)))
@@ -1076,7 +1169,6 @@ def send_mail():
             results.append({'id':pid,'ok':False,'error':str(e)})
     return jsonify({'ok':True,'results':results})
 
-# ── Backup ────────────────────────────────────────────────────────────────────
 @app.route('/api/backup')
 @login_required
 @admin_required
@@ -1108,12 +1200,63 @@ def synthese_detail(pid):
         FROM titulaires t JOIN classes cl ON t.classe_id=cl.id
         JOIN filieres f ON cl.filiere_id=f.id WHERE t.personnel_id=? AND t.annee=?
     """, (pid, annee))
-    nominations = fetchall(conn, "SELECT matiere, heures FROM nominations WHERE personnel_id=? ORDER BY matiere", (pid,))
+    nominations = fetchall(conn, "SELECT matiere, heures, sit, nomme FROM nominations WHERE personnel_id=? ORDER BY nomme DESC, matiere", (pid,))
     conn.close()
     total = sum(a['h'] for a in detail)
     total_nomme = sum(n['heures'] for n in nominations)
     return jsonify({'attributions':detail,'titulariats':titu,'nominations':nominations,
                     'total':total,'total_nomme':total_nomme})
+
+
+@app.route('/export/mails-texte')
+@login_required
+def export_mails_texte():
+    annee = request.args.get('annee', annee_active())
+    conn  = get_db()
+    profs = fetchall(conn,
+        "SELECT DISTINCT p.id, p.acronyme, p.prenom, p.nom, p.email "
+        "FROM personnel p JOIN attributions a ON a.personnel_id=p.id "
+        "JOIN cours c ON a.cours_id=c.id "
+        "WHERE a.annee=? AND p.actif=1 ORDER BY p.nom, p.prenom", (annee,))
+    lines = [f"ATTRIBUTIONS {annee}", f"Généré le {datetime.now().strftime('%d/%m/%Y')}", "="*60, ""]
+    for prof in profs:
+        attrs = fetchall(conn,
+            "SELECT f.nom as filiere, COALESCE(cl.nom,f.nom) as classe, c.nom, c.type, "
+            "CASE WHEN a.heures_attr IS NOT NULL THEN a.heures_attr ELSE c.heures END as h "
+            "FROM attributions a JOIN cours c ON a.cours_id=c.id "
+            "JOIN filieres f ON c.filiere_id=f.id LEFT JOIN classes cl ON a.classe_id=cl.id "
+            "WHERE a.personnel_id=? AND a.annee=? ORDER BY f.ordre, c.type, c.ordre",
+            (prof['id'], annee))
+        titu = fetchall(conn,
+            "SELECT f.nom as filiere, cl.nom as classe "
+            "FROM titulaires t JOIN classes cl ON t.classe_id=cl.id "
+            "JOIN filieres f ON cl.filiere_id=f.id "
+            "WHERE t.personnel_id=? AND t.annee=?", (prof['id'], annee))
+        total = sum(a['h'] for a in attrs)
+        nom_complet = f"{prof['prenom'] or ''} {prof['nom'] or ''}".strip() or prof['acronyme']
+        lines += ["="*60, f"{prof['acronyme']} — {nom_complet}"]
+        if prof['email']:
+            lines.append(f"Email : {prof['email']}")
+        lines.append("-"*60)
+        if titu:
+            lines.append("Titulariats :")
+            for t in titu:
+                lines.append(f"  - {t['filiere']} / {t['classe']}")
+            lines.append("")
+        lines.append(f"Attributions {annee} :")
+        current_fil = None
+        for a in attrs:
+            if a['filiere'] != current_fil:
+                current_fil = a['filiere']
+                lines.append(f"  [{a['filiere']}]")
+            lines.append(f"    - {a['nom']} ({a['h']:.0f}h) — {a['classe']} [{a['type']}]")
+        lines += ["", f"TOTAL : {total:.0f}h", ""]
+    conn.close()
+    from io import BytesIO
+    buf = BytesIO("\n".join(lines).encode('utf-8'))
+    buf.seek(0)
+    return send_file(buf, download_name=f'attributions_{annee}.txt',
+                     as_attachment=True, mimetype='text/plain')
 
 # ── Export Excel ──────────────────────────────────────────────────────────────
 @app.route('/export/excel')
@@ -1148,10 +1291,13 @@ def export_excel():
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 # ── Initialisation au démarrage ───────────────────────────────────────────────
-# Appelé par gunicorn ET python app.py
-import atexit as _atexit
-
-# DB initialized by gunicorn.conf.py on_starting hook
+try:
+    os.makedirs('data', exist_ok=True)
+    init_db()
+    seed()
+    print('Base de données prête.')
+except Exception as e:
+    print(f'Erreur init DB: {e}')
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 if __name__ == '__main__':

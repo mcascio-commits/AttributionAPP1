@@ -54,12 +54,33 @@ function doAC(input) {
   fetch(`/api/personnel/search?q=${encodeURIComponent(q)}`)
     .then(r => r.json()).then(results => {
       let drop = document.getElementById('ac-drop');
-      if (!drop) { drop = document.createElement('div'); drop.id='ac-drop'; document.body.appendChild(drop); }
+      if (!drop) {
+        drop = document.createElement('div');
+        drop.id = 'ac-drop';
+        document.body.appendChild(drop);
+      }
       const rect = input.getBoundingClientRect();
-      drop.style.top  = (rect.bottom + window.scrollY + 2) + 'px';
-      drop.style.left = (rect.left + window.scrollX) + 'px';
+      // Position fixed relative to viewport (not page) to work inside modals
+      drop.style.position = 'fixed';
+      drop.style.zIndex   = '9999';
       drop.style.minWidth = rect.width + 'px';
-      if (!results.length) { drop.innerHTML='<div class="ac-item" style="color:var(--text3)">Aucun résultat</div>'; drop.style.display='block'; return; }
+      drop.style.maxHeight = '200px';
+      drop.style.overflowY = 'auto';
+      // Show above or below depending on space
+      const spaceBelow = window.innerHeight - rect.bottom;
+      if (spaceBelow < 150 && rect.top > 150) {
+        drop.style.bottom = (window.innerHeight - rect.top + 2) + 'px';
+        drop.style.top = 'auto';
+      } else {
+        drop.style.top  = (rect.bottom + 2) + 'px';
+        drop.style.bottom = 'auto';
+      }
+      drop.style.left = rect.left + 'px';
+      if (!results.length) {
+        drop.innerHTML = '<div class="ac-item" style="color:var(--text3)">Aucun résultat</div>';
+        drop.style.display = 'block';
+        return;
+      }
       drop.innerHTML = results.map(p => `
         <div class="ac-item" data-acro="${p.acronyme}">
           <strong>${p.acronyme}</strong>
@@ -546,7 +567,7 @@ function getOrCreateTooltip() {
   if (!_tooltipEl) {
     _tooltipEl = document.createElement('div');
     _tooltipEl.id = 'prof-tooltip';
-    _tooltipEl.style.cssText = 'position:fixed;z-index:999;background:var(--text);color:#fff;padding:8px 12px;border-radius:var(--radius);font-size:11px;pointer-events:none;display:none;max-width:260px;line-height:1.6;box-shadow:0 4px 12px rgba(0,0,0,.2)';
+    _tooltipEl.style.cssText = 'position:fixed;z-index:9999;background:#1a1a18;color:#fff;padding:10px 14px;border-radius:8px;font-size:11px;pointer-events:none;display:none;max-width:300px;line-height:1.6;box-shadow:0 6px 20px rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.1)';
     document.body.appendChild(_tooltipEl);
   }
   return _tooltipEl;
@@ -584,9 +605,17 @@ function initTooltips() {
                   '</div>').join('');
                 // Nominations
                 const noms = d.nominations || [];
+                const nomsNomme = noms.filter(n => n.nomme);
+                const nomsTemp  = noms.filter(n => !n.nomme);
                 const nomHtml = noms.length ?
-                  '<div style="margin-top:6px;padding-top:4px;border-top:1px solid rgba(255,255,255,.15)"><div style="font-size:9px;color:#fac775;margin-bottom:2px">NOMMÉ</div>' +
-                  noms.map(n=>'<div style="display:flex;justify-content:space-between;gap:10px;font-size:10px"><span style="color:#ddd">' + n.matiere + '</span><span style="color:#fac775;flex-shrink:0">' + n.heures + 'h</span></div>').join('') + '</div>' : '';
+                  (nomsNomme.length ?
+                    '<div style="margin-top:6px;padding-top:4px;border-top:1px solid rgba(255,255,255,.15)">' +
+                    '<div style="font-size:9px;color:#a8d8a8;margin-bottom:2px">● DÉFINITIF</div>' +
+                    nomsNomme.map(n=>'<div style="display:flex;justify-content:space-between;gap:10px;font-size:10px"><span style="color:#ddd">' + n.matiere + '</span><span style="color:#a8d8a8;flex-shrink:0">' + n.heures + 'h</span></div>').join('') + '</div>' : '') +
+                  (nomsTemp.length ?
+                    '<div style="margin-top:4px">' +
+                    '<div style="font-size:9px;color:#fac775;margin-bottom:2px">● TEMPORAIRE</div>' +
+                    nomsTemp.map(n=>'<div style="display:flex;justify-content:space-between;gap:10px;font-size:10px;opacity:.8"><span style="color:#ddd">' + n.matiere + '</span><span style="color:#fac775;flex-shrink:0">' + n.heures + 'h</span></div>').join('') + '</div>' : '') : '';
                 // Ecart
                 const ec = totalNom > 0 ? '<div style="margin-top:4px;padding-top:4px;border-top:1px solid rgba(255,255,255,.1);font-size:10px;display:flex;justify-content:space-between"><span style="color:#aaa">Écart</span><span style="color:' + (ecart===0?'#a8d8a8':ecart>0?'#fac775':'#ff8080') + ';font-weight:600">' + (ecart>0?'+':'') + ecart + 'h</span></div>' : '';
                 tip.innerHTML =
@@ -596,9 +625,32 @@ function initTooltips() {
                   (titu ? '<div style="color:#fac775;font-size:10px;margin-top:2px">🏷 ' + titu + '</div>' : '') +
                   coursHtml + nomHtml + ec;
                 const rect = pill.getBoundingClientRect();
-                tip.style.left    = Math.min(rect.left, window.innerWidth - 270) + 'px';
-                tip.style.top     = (rect.bottom + 6) + 'px';
+                // Position fixed (viewport coordinates, no scrollY needed)
                 tip.style.display = 'block';
+                const tipH = tip.offsetHeight || 250;
+                const tipW = tip.offsetWidth  || 280;
+                const margin = 8;
+
+                // Vertical: prefer below, go above if not enough space
+                let top;
+                if (window.innerHeight - rect.bottom > tipH + margin) {
+                  top = rect.bottom + margin;
+                } else if (rect.top > tipH + margin) {
+                  top = rect.top - tipH - margin;
+                } else {
+                  // Not enough space either way — show at middle of screen
+                  top = Math.max(margin, (window.innerHeight - tipH) / 2);
+                }
+
+                // Horizontal: keep inside viewport
+                let left = rect.left;
+                if (left + tipW > window.innerWidth - margin) {
+                  left = window.innerWidth - tipW - margin;
+                }
+                left = Math.max(margin, left);
+
+                tip.style.top  = top  + 'px';
+                tip.style.left = left + 'px';
               });
           });
       }, 500);

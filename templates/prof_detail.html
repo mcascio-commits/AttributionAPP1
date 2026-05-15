@@ -114,8 +114,18 @@
           {% endif %}
         {% endfor %}
         {% set ec = h_attr.val - n.heures %}
-        <tr>
-          <td style="font-size:11px">{{ n.matiere }}</td>
+        <tr style="{% if not n.nomme %}opacity:.7;background:var(--surface2){% endif %}">
+          <td style="font-size:11px">
+            {% if n.nomme %}
+            <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);margin-right:5px"></span>
+            {% else %}
+            <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--amber);margin-right:5px"></span>
+            {% endif %}
+            {{ n.matiere }}
+            {% if n.sit %}
+            <span style="font-size:9px;color:var(--text3);margin-left:4px">({{ n.sit }})</span>
+            {% endif %}
+          </td>
           <td class="r"><strong>{{ n.heures|int }}h</strong></td>
           <td class="r" style="color:var(--text2)">{{ h_attr.val|int }}h</td>
           <td class="r" style="color:{% if ec == 0 %}var(--green-dark){% elif ec > 0 %}var(--amber){% else %}var(--red){% endif %};font-size:11px">
@@ -133,6 +143,12 @@
         </tr>
         </tbody>
       </table>
+      {% if nominations %}
+      <div style="padding:5px 14px 8px;font-size:10px;color:var(--text3);display:flex;gap:16px;border-top:1px solid var(--border)">
+        <span><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);margin-right:4px"></span>Nommé (D/P/T)</span>
+        <span><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--amber);margin-right:4px"></span>Temporaire/Suppléant</span>
+      </div>
+      {% endif %}
       {% else %}
       <div style="padding:20px;text-align:center;color:var(--text3);font-size:12px">
         Aucune nomination encodée.<br>
